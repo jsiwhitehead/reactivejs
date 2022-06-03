@@ -1,0 +1,17 @@
+{
+  "name": "reactivejs",
+  "source": "src/index.html",
+  "scripts": {
+    "start": "parcel",
+    "build": "parcel build"
+  },
+  "devDependencies": {
+    "parcel": "latest"
+  },
+  "dependencies": {
+    "acorn": "^8.7.1",
+    "astring": "^1.8.3",
+    "incremental-dom": "^0.7.0",
+    "ohm-js": "^16.3.4"
+  }
+}
