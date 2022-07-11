@@ -1,8 +1,7 @@
 import { elementOpen, elementClose, patch, text } from "incremental-dom";
 
-import { isObject, isReactive, resolve } from "./compile";
-
-const resolveSingle = (x) => (isReactive(x) ? x() : x);
+import { createRoot } from "./signal";
+import { isObject, isReactive, resolve, resolveSingle } from "./compile";
 
 const kebabToCamel = (s) => {
   let v = s;
@@ -48,7 +47,7 @@ const render = (data) => {
     resolveSingle(data.tag),
     null,
     null,
-    ...Object.keys(props).reduce((res, k) => [...res, k, props[k]], [])
+    ...Object.keys(props).reduce((res, k) => [...res, k, props[k]], [] as any[])
   );
 
   content.forEach((c) => render(c));
@@ -56,7 +55,8 @@ const render = (data) => {
   elementClose(resolveSingle(data.tag));
 };
 
-export default (root) => (data) => patch(root, render, resolveSingle(data));
+export default (root) =>
+  createRoot(() => (data) => patch(root, render, resolveSingle(data)));
 
 // const attributesMap = {
 //   accesskey: "accessKey",

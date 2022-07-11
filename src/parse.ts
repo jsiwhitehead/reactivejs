@@ -136,7 +136,25 @@ s.addAttribute("ast", {
 
   bchar: (_) => null,
 
-  value: (a) => a.ast,
+  value: (a) => {
+    for (let i = 0; i < a.ast.length - 1; i++) {
+      if (
+        typeof a.ast[i] === "string" &&
+        /\w+$/.test(a.ast[i]) &&
+        typeof a.ast[i + 1] === "object" &&
+        ["brackets", "array"].includes(a.ast[i + 1].type)
+      ) {
+        const name = /\w+$/.exec(a.ast[i])![0];
+        a.ast[i + 1] = {
+          ...a.ast[i + 1],
+          type: a.ast[i + 1].type === "brackets" ? "call" : "index",
+          name,
+        };
+        a.ast[i] = a.ast[i].slice(0, -name.length);
+      }
+    }
+    return a.ast;
+  },
 
   vchunk: (a) => a.sourceString,
 
