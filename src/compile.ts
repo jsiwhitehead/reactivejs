@@ -33,60 +33,43 @@ export const resolve = (node) => {
   return node;
 };
 
+const buildCallNode = (func, arg) => ({
+  type: "CallExpression",
+  callee: {
+    type: "Identifier",
+    name: func,
+  },
+  arguments: [arg],
+});
 const addGetResolve = (tree) => {
   walk(tree, {
     enter(node, parent, prop) {
+      if (node.type === "Identifier" && prop !== "property") {
+        const inner = buildCallNode(node.name[0] === "$" ? "val" : "get", {
+          type: "Literal",
+          value: node.name,
+        });
+        if (
+          parent.type !== "CallExpression" &&
+          parent.type !== "ExpressionStatement"
+        ) {
+          this.replace(buildCallNode("resolve", inner));
+        } else {
+          this.replace(inner);
+        }
+        this.skip();
+      }
       if (
         node.type === "MemberExpression" &&
         parent &&
         parent.type !== "CallExpression" &&
         parent.type !== "ExpressionStatement"
       ) {
-        this.replace({
-          type: "CallExpression",
-          callee: {
-            type: "Identifier",
-            name: "resolve",
-          },
-          arguments: [addGetResolve(node)],
-        });
-        this.skip();
-      }
-      if (node.type === "Identifier" && prop !== "property") {
-        const inner = {
-          type: "CallExpression",
-          callee: {
-            type: "Identifier",
-            name: node.name[0] === "$" ? "val" : "get",
-          },
-          arguments: [{ type: "Literal", value: node.name }],
-        };
-        if (
-          parent.type !== "ExpressionStatement" &&
-          parent.type !== "CallExpression"
-        ) {
-          this.replace({
-            type: "CallExpression",
-            callee: {
-              type: "Identifier",
-              name: "resolve",
-            },
-            arguments: [inner],
-          });
-        } else {
-          this.replace(inner);
-        }
+        this.replace(buildCallNode("resolve", addGetResolve(node)));
         this.skip();
       }
       if (node.type === "CallExpression" && parent) {
-        this.replace({
-          type: "CallExpression",
-          callee: {
-            type: "Identifier",
-            name: "resolve",
-          },
-          arguments: [addGetResolve(node)],
-        });
+        this.replace(buildCallNode("resolve", addGetResolve(node)));
         this.skip();
       }
     },
@@ -106,10 +89,13 @@ const compileNode = (node, getVar, noTrack) => {
       .join("");
     const tree = acorn.parse(code, { ecmaVersion: 2022 }) as any;
     addGetResolve(tree);
+    for (const e of tree.body.slice(0, -1)) {
+      e.expression = buildCallNode("resolveAll", e.expression);
+    }
     const newCode = astring.generate(tree).split(";\n").slice(0, -1);
     const func = Function(
       `"use strict";
-      return function(resolve, get, val) {
+      return function(resolve, resolveAll, get, val) {
         ${newCode
           .map((c, i) => `${i === newCode.length - 1 ? "return " : ""}${c};`)
           .join("\n")}
@@ -118,6 +104,7 @@ const compileNode = (node, getVar, noTrack) => {
     const result = () =>
       func(
         (v) => resolveSingle(v),
+        (v) => resolve(v),
         (name) =>
           name === noTrack ? untrack(() => getVar(name)()) : getVar(name),
         (id) => values[parseInt(id.slice(1), 10)]

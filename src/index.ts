@@ -6,30 +6,16 @@ const update = render(document.getElementById("app"));
 
 createRoot(() => {
   const tick = createReactive(1);
-  // setInterval(() => {
-  //   tick.set(tick() + 1);
-  // }, 1000);
+  setInterval(() => {
+    tick.set(tick() + 1);
+  }, 1000);
 
   const x = compile(
-    // `
-    // (
-    //   a:: 1,
-    //   b:(x)=> (
-    //     x:: 10,
-    //     x
-    //   ),
-    //   b(a)
-    // )
-    // `,
     `
     (
-      
-      <div
-        hover::{onmouseenter; true}
-        hover::{onmouseleave; false}
-      >
-        Hello {hover}
-      </div>
+      value:: 10,
+      value:: tick; value + 10,
+      value,
     )
     `,
     // `
