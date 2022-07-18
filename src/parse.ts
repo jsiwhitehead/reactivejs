@@ -33,10 +33,10 @@ const grammar = String.raw`Maraca {
     = "..." space* value
 
   block<tag>
-    = "<" tag space* listOf<(bmerge | bassign), space+> space* ">" bcontent* "</" tag ">"
+    = "<" tag space* listOf<(bmerge | bassign | bunpack), space+> space* ">" bcontent* "</" tag ">"
 
   blockclosed<tag>
-    = "<" tag space* listOf<(bmerge | bassign), space+> space* "/>"
+    = "<" tag space* listOf<(bmerge | bassign | bunpack), space+> space* "/>"
 
   bmerge
     = key "::" (bvalue | string)?
@@ -45,7 +45,10 @@ const grammar = String.raw`Maraca {
     = key "=" (bvalue | string)
 
   bcontent
-    = (bchunk | bvalue | block<name> | blockclosed<name>)
+    = (bchunk | bunpack | bvalue | block<name> | blockclosed<name>)
+
+  bunpack
+    = "{" "..." value "}"
 
   bvalue
     = "{" value "}"
@@ -129,6 +132,8 @@ s.addAttribute("ast", {
   bassign: (a, _1, b) => ({ type: "assign", key: a.ast, value: b.ast }),
 
   bcontent: (a) => a.ast,
+
+  bunpack: (_1, _2, a, _3) => ({ type: "unpack", value: a.ast }),
 
   bvalue: (_1, a, _2) => a.ast,
 

@@ -1,7 +1,7 @@
 import * as acorn from "acorn";
 import * as astring from "astring";
 
-import { createSignal, createComputed, untrack } from "./signal";
+import { createSignal, createComputed, createMemo, untrack } from "./signal";
 import parse from "./parse";
 import walk from "./walk";
 
@@ -18,9 +18,6 @@ export const createReactive = (initial?) => {
 
 export const resolveSingle = (x) => (isReactive(x) ? resolveSingle(x()) : x);
 
-export const resolveSet = (x) =>
-  isReactive(x) && !x.set ? resolveSet(x()) : x;
-
 export const resolve = (node) => {
   if (isReactive(node)) return resolve(node());
   if (Array.isArray(node)) return node.map((x) => resolve(x));
@@ -33,6 +30,14 @@ export const resolve = (node) => {
   return node;
 };
 
+const createDerived = (func, alwaysTrigger = false) => {
+  const result = createMemo(func, null, {
+    equals: alwaysTrigger ? false : undefined,
+  });
+  Object.assign(result, { isReactive: true });
+  return result;
+};
+
 const buildCallNode = (func, arg) => ({
   type: "CallExpression",
   callee: {
@@ -41,35 +46,31 @@ const buildCallNode = (func, arg) => ({
   },
   arguments: [arg],
 });
-const addGetResolve = (tree) => {
+const maybeResolve = (node, parentType) =>
+  ["CallExpression", "ExpressionStatement"].includes(parentType)
+    ? node
+    : buildCallNode("resolve", node);
+const updateTree = (tree) => {
   walk(tree, {
     enter(node, parent, prop) {
       if (node.type === "Identifier" && prop !== "property") {
-        const inner = buildCallNode(node.name[0] === "$" ? "val" : "get", {
-          type: "Literal",
-          value: node.name,
-        });
-        if (
-          parent.type !== "CallExpression" &&
-          parent.type !== "ExpressionStatement"
-        ) {
-          this.replace(buildCallNode("resolve", inner));
-        } else {
-          this.replace(inner);
-        }
+        const method = node.name[0] === "$" ? "val" : "get";
+        this.replace(
+          maybeResolve(
+            buildCallNode(method, { type: "Literal", value: node.name }),
+            parent.type
+          )
+        );
         this.skip();
       }
-      if (
-        node.type === "MemberExpression" &&
-        parent &&
-        parent.type !== "CallExpression" &&
-        parent.type !== "ExpressionStatement"
-      ) {
-        this.replace(buildCallNode("resolve", addGetResolve(node)));
+      if (node.type === "MemberExpression" && parent) {
+        this.replace(
+          maybeResolve(updateTree({ ...node, optional: true }), parent.type)
+        );
         this.skip();
       }
       if (node.type === "CallExpression" && parent) {
-        this.replace(buildCallNode("resolve", addGetResolve(node)));
+        this.replace(maybeResolve(updateTree(node), parent.type));
         this.skip();
       }
     },
@@ -88,7 +89,17 @@ const compileNode = (node, getVar, noTrack) => {
       .map((v, i) => (typeof v === "string" ? v : `$${i}`))
       .join("");
     const tree = acorn.parse(code, { ecmaVersion: 2022 }) as any;
-    addGetResolve(tree);
+    if (
+      tree.body.length === 1 &&
+      tree.body[0].expression.type === "Identifier"
+    ) {
+      const name = tree.body[0].expression.name;
+      if (name[0] === "$") return values[parseInt(name.slice(1), 10)];
+      return name === noTrack
+        ? untrack(() => resolve(getVar(name)))
+        : getVar(name);
+    }
+    updateTree(tree);
     for (const e of tree.body.slice(0, -1)) {
       e.expression = buildCallNode("resolveAll", e.expression);
     }
@@ -101,16 +112,19 @@ const compileNode = (node, getVar, noTrack) => {
           .join("\n")}
       };`
     )();
-    const result = () =>
-      func(
-        (v) => resolveSingle(v),
-        (v) => resolve(v),
-        (name) =>
-          name === noTrack ? untrack(() => getVar(name)()) : getVar(name),
-        (id) => values[parseInt(id.slice(1), 10)]
-      );
-    Object.assign(result, { isReactive: true });
-    return result;
+    return createDerived(
+      () =>
+        func(
+          (v) => resolveSingle(v),
+          (v) => resolve(v),
+          (name) =>
+            name === noTrack
+              ? untrack(() => resolve(getVar(name)))
+              : getVar(name),
+          (id) => values[parseInt(id.slice(1), 10)]
+        ),
+      newCode.length > 1
+    );
   }
 
   if (node.type === "func") {
@@ -125,13 +139,11 @@ const compileNode = (node, getVar, noTrack) => {
   }
 
   if (node.type === "index") {
-    const result = () => {
+    return createDerived(() => {
       const value = resolveSingle(getVar(node.name));
       const index = resolveSingle(compileNode(node.items[0], getVar, noTrack));
-      return value[index];
-    };
-    Object.assign(result, { isReactive: true });
-    return result;
+      return value?.[index];
+    });
   }
 
   if (node.type === "call") {
@@ -164,6 +176,27 @@ const compileNode = (node, getVar, noTrack) => {
       }
       return res;
     };
+
+    const tempContent = [] as any[];
+    for (const n of node.items.filter(
+      (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
+    )) {
+      if (isObject(n) && n.type === "unpack") {
+        const v = resolveSingle(compileNode(n.value, getVar, noTrack));
+        const block = isObject(v)
+          ? v.type === "block"
+            ? v
+            : { values: v }
+          : { items: v };
+        Object.assign(values, block.values || {});
+        tempContent.push(
+          ...(block.items || []).map((x) => ({ compiled: true, value: x }))
+        );
+      } else {
+        tempContent.push({ compiled: false, value: n });
+      }
+    }
+
     for (const name of Object.keys(assignItems)) newGetVar(name);
 
     node.items
@@ -182,7 +215,7 @@ const compileNode = (node, getVar, noTrack) => {
         (typeof value === "string" && value.includes(";")) ||
         (Array.isArray(value) &&
           value.some((v) => typeof v === "string" && v.includes(";")));
-      const target = resolveSet(newGetVar(key));
+      const target = newGetVar(key);
       createComputed(() => {
         const res = resolve(source);
         if (!first) target.set(res);
@@ -190,24 +223,9 @@ const compileNode = (node, getVar, noTrack) => {
       });
     }
 
-    const content = [] as any[];
-    for (const n of node.items.filter(
-      (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
-    )) {
-      if (isObject(n) && n.type === "unpack") {
-        const compiled = compileNode(n.value, newGetVar, noTrack);
-        const v = isReactive(compiled) ? compiled() : compiled;
-        const block = isObject(v)
-          ? v.type === "block"
-            ? v
-            : { values: v }
-          : { items: v };
-        Object.assign(values, block.values || {});
-        content.push(...(block.items || []));
-      } else {
-        content.push(compileNode(n, newGetVar, noTrack));
-      }
-    }
+    const content = tempContent.map((x) =>
+      x.compiled ? x.value : compileNode(x.value, newGetVar, noTrack)
+    );
 
     if (node.type === "brackets") return content[content.length - 1];
     if (node.type === "block")
@@ -220,8 +238,7 @@ const compileNode = (node, getVar, noTrack) => {
   if (!node.items.some((n) => isObject(n) && n.type === "unpack")) {
     return result();
   }
-  Object.assign(result, { isReactive: true });
-  return result;
+  return createDerived(result);
 };
 
 export default (script, library = {}) => {

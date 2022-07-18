@@ -18,11 +18,15 @@ const kebabToCamel = (s) => {
 const render = (data) => {
   if (!isObject(data)) return text(data);
 
+  if (!data.items) {
+    return text(JSON.stringify(resolve(data), null, 2));
+  }
+
   const content = data.items.map((d) => resolveSingle(d));
 
   const values = resolve(data.values);
   const setters = Object.keys(data.values)
-    .filter((k) => isReactive(data.values[k]))
+    .filter((k) => isReactive(data.values[k]) && k.startsWith("on"))
     .reduce(
       (res, k) => ({
         ...res,
