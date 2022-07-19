@@ -131,7 +131,7 @@ const compileNode = (node, getVar, noTrack) => {
   }
 
   if (node.type === "func") {
-    return (...args) => {
+    const result = (...args) => {
       const newGetVar = (name) => {
         const index = node.args.indexOf(name);
         if (index !== -1) return args[index];
@@ -139,6 +139,8 @@ const compileNode = (node, getVar, noTrack) => {
       };
       return compileNode(node.body, newGetVar, noTrack);
     };
+    Object.assign(result, { reactiveFunc: true });
+    return result;
   }
 
   if (node.type === "index") {
@@ -152,10 +154,27 @@ const compileNode = (node, getVar, noTrack) => {
   if (node.type === "call") {
     const base = compileNode([node.base], getVar, noTrack);
     const func = node.path.reduce(
-      (res, p) => (typeof res[p] === "function" ? res[p].bind(res) : res[p]),
+      (res, p) =>
+        typeof res?.[p] === "function" ? res?.[p].bind(res) : res?.[p],
       base
     );
     const args = node.items.map((x) => compileNode(x, getVar, noTrack));
+    if (typeof func !== "function" || !func.reactiveFunc) {
+      return createDerived(() => {
+        const func = node.path.reduce((res, p, i) => {
+          const next = resolve(res[p]);
+          return i === node.path.length - 1 ? next.bind(res) : next;
+        }, resolve(base));
+        return func(
+          ...args.map((a) => {
+            const v = resolve(a, true);
+            return typeof v === "function"
+              ? (...x) => resolve(a(...x), true)
+              : v;
+          })
+        );
+      });
+    }
     return func(...args);
   }
 

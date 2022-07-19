@@ -60,11 +60,23 @@ const grammar = String.raw`Maraca {
     = ~("<" | "{") any
 
   value
-    = (vchunk | function| brackets | object | array | block<name> | blockclosed<name>)+
+    = (vchunk | xstring | ystring | function| brackets | object | array | block<name> | blockclosed<name>)+
 
   vchunk = vchar+
 
-  vchar = ~("(" | ")" | "{" | "}" | "[" | "]" | "," | "=>" | open | "/>") any
+  vchar = ~("(" | ")" | "{" | "}" | "[" | "]" | "," | "=>" | open | "/>" | "\"" | "'") any
+
+  xstring
+  = "\"" (xchar | escape)* "\""
+
+  xchar
+  = ~("\"" | "\\") any
+
+  ystring
+  = "'" (ychar | escape)* "'"
+
+  ychar
+  = ~("'" | "\\") any
 
   open
     = "<" name
@@ -179,6 +191,14 @@ s.addAttribute("ast", {
   vchunk: (a) => a.sourceString,
 
   vchar: (_) => null,
+
+  xstring: (_1, a, _2) => `"${a.sourceString}"`,
+
+  xchar: (_) => null,
+
+  ystring: (_1, a, _2) => `'${a.sourceString}'`,
+
+  ychar: (_) => null,
 
   open: (_1, a) => a.ast,
 

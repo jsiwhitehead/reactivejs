@@ -1,5 +1,5 @@
 import render from "./render";
-import run, { createReactive, resolve } from "./compile";
+import run, { createReactive } from "./compile";
 
 const isObject = (x) => Object.prototype.toString.call(x) === "[object Object]";
 
@@ -12,7 +12,7 @@ run(
   `
   (
     px: (v)=> typeof v === 'number' ? v + 'px' : v,
-    map: (x)=> !isObject(x) ? x : (
+    map: (x)=> x.type !== 'block' ? x : (
       ...x.values,
       size: x.size || 20,
       line: x.line || 1.5,
@@ -87,10 +87,10 @@ run(
   `,
   {
     tick,
-    isArray: (v) => Array.isArray(resolve(v)),
-    isObject: (v) => isObject(resolve(v)),
-    mapArray: (v, f) => (resolve(v) || []).map((x, i) => f(x, i)),
-    hasValues: (v) => (resolve(v) || []).some((x) => !isObject(resolve(x))),
+    isObject: (v) => isObject(v),
+    isArray: (v) => Array.isArray(v),
+    mapArray: (v, f) => (v || []).map((x, i) => f(x, i)),
+    hasValues: (v) => (v || []).some((x) => !isObject(x)),
   },
   render(document.getElementById("app"))
 );
