@@ -46,35 +46,40 @@ const buildCallNode = (func, arg) => ({
   },
   arguments: [arg],
 });
-const maybeResolve = (node, parentType) =>
-  ["CallExpression", "ExpressionStatement"].includes(parentType)
-    ? node
-    : buildCallNode("resolveSingle", node);
 const updateTree = (tree) => {
+  let hasResolve = false;
   walk(tree, {
     enter(node, parent, prop) {
+      const maybeResolve = (node) => {
+        if (["CallExpression", "ExpressionStatement"].includes(parent.type)) {
+          return node;
+        }
+        hasResolve = true;
+        return buildCallNode("resolveSingle", node);
+      };
       if (node.type === "Identifier" && prop !== "property") {
-        this.replace(
-          maybeResolve(
-            buildCallNode("getValue", { type: "Literal", value: node.name }),
-            parent.type
-          )
-        );
+        const inner = buildCallNode("getValue", {
+          type: "Literal",
+          value: node.name,
+        });
+        this.replace(maybeResolve(inner));
         this.skip();
       }
       if (node.type === "MemberExpression" && parent) {
-        this.replace(
-          maybeResolve(updateTree({ ...node, optional: true }), parent.type)
-        );
+        const inner = { ...node, optional: true };
+        if (updateTree(inner)) hasResolve = true;
+        this.replace(maybeResolve(inner));
         this.skip();
       }
       if (node.type === "CallExpression" && parent) {
-        this.replace(maybeResolve(updateTree(node), parent.type));
+        const inner = node;
+        if (updateTree(inner)) hasResolve = true;
+        this.replace(maybeResolve(inner));
         this.skip();
       }
     },
   });
-  return tree;
+  return hasResolve;
 };
 
 const compileNode = (node, getVar, noTrack) => {
@@ -99,14 +104,9 @@ const compileNode = (node, getVar, noTrack) => {
       return getVar(name);
     };
     const tree = acorn.parse(code, { ecmaVersion: 2022 }) as any;
-    if (
-      tree.body.length === 1 &&
-      tree.body[0].expression.type === "Identifier"
-    ) {
-      return getValue(tree.body[0].expression.name);
-    }
-    updateTree(tree);
+    let hasResolve = updateTree(tree);
     for (const e of tree.body.slice(0, -1)) {
+      hasResolve = true;
       e.expression = buildCallNode("resolve", e.expression);
     }
     const newCode = astring.generate(tree).split(";\n").slice(0, -1);
@@ -118,6 +118,7 @@ const compileNode = (node, getVar, noTrack) => {
           .join("\n")}
       };`
     )();
+    if (!hasResolve) return func(getValue);
     return createDerived(
       () => func(getValue, resolveSingle, resolve),
       newCode.length > 1
