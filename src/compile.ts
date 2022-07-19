@@ -49,15 +49,14 @@ const buildCallNode = (func, arg) => ({
 const maybeResolve = (node, parentType) =>
   ["CallExpression", "ExpressionStatement"].includes(parentType)
     ? node
-    : buildCallNode("resolve", node);
+    : buildCallNode("resolveSingle", node);
 const updateTree = (tree) => {
   walk(tree, {
     enter(node, parent, prop) {
       if (node.type === "Identifier" && prop !== "property") {
-        const method = node.name[0] === "$" ? "val" : "get";
         this.replace(
           maybeResolve(
-            buildCallNode(method, { type: "Literal", value: node.name }),
+            buildCallNode("getValue", { type: "Literal", value: node.name }),
             parent.type
           )
         );
@@ -79,50 +78,48 @@ const updateTree = (tree) => {
 };
 
 const compileNode = (node, getVar, noTrack) => {
-  if (!node) return node;
   if (typeof node === "string") return node;
 
   if (Array.isArray(node)) {
-    const values = node.map((v) => compileNode(v, getVar, noTrack));
-    if (values.length === 1 && typeof values[0] !== "string") return values[0];
-    const code = values
+    const code = node
       .map((v, i) => (typeof v === "string" ? v : `$${i}`))
       .join("");
+    const compiled = [] as any[];
+    const getValue = (name) => {
+      if (name[0] === "$") {
+        const index = parseInt(name.slice(1), 10);
+        if (!compiled[index]) {
+          compiled[index] = compileNode(node[index], getVar, noTrack);
+        }
+        return compiled[index];
+      }
+      if (name === noTrack) {
+        return untrack(() => resolve(getVar(name)));
+      }
+      return getVar(name);
+    };
     const tree = acorn.parse(code, { ecmaVersion: 2022 }) as any;
     if (
       tree.body.length === 1 &&
       tree.body[0].expression.type === "Identifier"
     ) {
-      const name = tree.body[0].expression.name;
-      if (name[0] === "$") return values[parseInt(name.slice(1), 10)];
-      return name === noTrack
-        ? untrack(() => resolve(getVar(name)))
-        : getVar(name);
+      return getValue(tree.body[0].expression.name);
     }
     updateTree(tree);
     for (const e of tree.body.slice(0, -1)) {
-      e.expression = buildCallNode("resolveAll", e.expression);
+      e.expression = buildCallNode("resolve", e.expression);
     }
     const newCode = astring.generate(tree).split(";\n").slice(0, -1);
     const func = Function(
       `"use strict";
-      return function(resolve, resolveAll, get, val) {
+      return function(getValue, resolveSingle, resolve) {
         ${newCode
           .map((c, i) => `${i === newCode.length - 1 ? "return " : ""}${c};`)
           .join("\n")}
       };`
     )();
     return createDerived(
-      () =>
-        func(
-          (v) => resolveSingle(v),
-          (v) => resolve(v),
-          (name) =>
-            name === noTrack
-              ? untrack(() => resolve(getVar(name)))
-              : getVar(name),
-          (id) => values[parseInt(id.slice(1), 10)]
-        ),
+      () => func(getValue, resolveSingle, resolve),
       newCode.length > 1
     );
   }
@@ -166,7 +163,14 @@ const compileNode = (node, getVar, noTrack) => {
       if (assignItems[name]) {
         return (values[name] = compileNode(
           assignItems[name],
-          (n, c) => (n === name ? getVar(n, c) : newGetVar(n, c)),
+          (n, c) =>
+            n === name &&
+            !(
+              assignItems[name].length === 1 &&
+              assignItems[name][0].type === "func"
+            )
+              ? getVar(n, c)
+              : newGetVar(n, c),
           noTrack
         ));
       }

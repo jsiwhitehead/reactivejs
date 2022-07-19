@@ -40,10 +40,12 @@ const render = (data) => {
     ...values,
     style:
       values.style &&
-      Object.keys(values.style).reduce(
-        (res, k) => ({ ...res, [kebabToCamel(k)]: values.style[k] }),
-        {}
-      ),
+      Object.keys(values.style)
+        .filter((k) => values.style[k] != null)
+        .reduce(
+          (res, k) => ({ ...res, [kebabToCamel(k)]: values.style[k] }),
+          {}
+        ),
     ...setters,
   };
 

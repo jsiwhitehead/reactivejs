@@ -1,5 +1,5 @@
 import render from "./render";
-import compile, { createReactive, resolveSingle } from "./compile";
+import compile, { createReactive, isObject, resolveSingle } from "./compile";
 import { createEffect, createRoot } from "./signal";
 
 const update = render(document.getElementById("app"));
@@ -13,8 +13,8 @@ createRoot(() => {
   const x = compile(
     `
     (
-      px: (v)=> typeof v === 'number' ? v + 'px' : (v ?? 0),
-      map: (x)=> (
+      px: (v)=> typeof v === 'number' ? v + 'px' : v,
+      map: (x)=> !isObject(x) ? x : (
         ...x.values,
         size: x.size || 20,
         line: x.line || 1.5,
@@ -50,7 +50,7 @@ createRoot(() => {
           hover::{onmouseleave; false}
           focus::{onfocus; true}
           focus::{onblur; false}
-        >{...mapArray(x.items, (a)=> a)}</div>
+        >{...mapArray(x.items, map)}</div>
       ),
       map(<a color={hover ? "red" : "blue"}>Hi</a>)
     )
@@ -62,7 +62,11 @@ createRoot(() => {
         const res = Array.isArray(v);
         return res;
       },
-      mapArray: (value, func) => resolveSingle(value).map((x) => func(x)),
+      isObject,
+      mapArray: (value, func) => {
+        const v = resolveSingle(value) || [];
+        return v.map((x) => func(x));
+      },
     }
   );
 
