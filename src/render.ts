@@ -1,7 +1,8 @@
 import { elementOpen, elementClose, patch, text } from "incremental-dom";
 
-import { createRoot } from "./signal";
-import { isObject, isReactive, resolve, resolveSingle } from "./compile";
+import { isReactive, resolve, resolveSingle } from "./compile";
+
+const isObject = (x) => Object.prototype.toString.call(x) === "[object Object]";
 
 const kebabToCamel = (s) => {
   let v = s;
@@ -61,8 +62,7 @@ const render = (data) => {
   elementClose(resolveSingle(data.tag));
 };
 
-export default (root) =>
-  createRoot(() => (data) => patch(root, render, resolveSingle(data)));
+export default (root) => (data) => patch(root, render, resolveSingle(data));
 
 // const attributesMap = {
 //   accesskey: "accessKey",

@@ -1,20 +1,28 @@
 import * as acorn from "acorn";
 import * as astring from "astring";
 
-import { createSignal, createComputed, createMemo, untrack } from "./signal";
+import {
+  createComputed,
+  createEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  untrack,
+} from "./signal";
 import parse from "./parse";
-import walk from "./walk";
 
-export const isObject = (x) =>
-  Object.prototype.toString.call(x) === "[object Object]";
+const isObject = (x) => Object.prototype.toString.call(x) === "[object Object]";
 
-export const isReactive = (x) => typeof x === "function" && x.isReactive;
+const mapObject = (obj, map) =>
+  Object.keys(obj).reduce((res, k) => ({ ...res, [k]: map(obj[k], k) }), {});
 
 export const createReactive = (initial?) => {
   const [get, set] = createSignal(initial, { equals: false });
   Object.assign(get, { isReactive: true, set });
   return get as any;
 };
+
+export const isReactive = (x) => typeof x === "function" && x.isReactive;
 
 export const resolveSingle = (x) => (isReactive(x) ? resolveSingle(x()) : x);
 
@@ -40,46 +48,51 @@ const createDerived = (func, alwaysTrigger = false) => {
 
 const buildCallNode = (func, arg) => ({
   type: "CallExpression",
-  callee: {
-    type: "Identifier",
-    name: func,
-  },
+  callee: { type: "Identifier", name: func },
   arguments: [arg],
 });
+const updateNode = (node, prop) => {
+  if (node.type === "Identifier" && prop !== "property") {
+    return buildCallNode("getValue", {
+      type: "Literal",
+      value: node.name,
+    });
+  }
+  if (node.type === "MemberExpression") {
+    return { ...node, optional: true };
+  }
+  return node;
+};
 const updateTree = (tree) => {
   let hasResolve = false;
-  walk(tree, {
-    enter(node, parent, prop) {
-      const maybeResolve = (node) => {
-        if (["CallExpression", "ExpressionStatement"].includes(parent.type)) {
-          return node;
-        }
-        hasResolve = true;
-        return buildCallNode("resolveSingle", node);
-      };
-      if (node.type === "Identifier" && prop !== "property") {
-        const inner = buildCallNode("getValue", {
-          type: "Literal",
-          value: node.name,
-        });
-        this.replace(maybeResolve(inner));
-        this.skip();
-      }
-      if (node.type === "MemberExpression" && parent) {
-        const inner = { ...node, optional: true };
-        if (updateTree(inner)) hasResolve = true;
-        this.replace(maybeResolve(inner));
-        this.skip();
-      }
-      if (node.type === "CallExpression" && parent) {
-        const inner = node;
-        if (updateTree(inner)) hasResolve = true;
-        this.replace(maybeResolve(inner));
-        this.skip();
-      }
-    },
-  });
-  return hasResolve;
+
+  const walkNode = (node, parent?, prop?) => {
+    if (!isObject(node) || typeof node.type !== "string") return node;
+
+    const walked = mapObject(node, (v, k) =>
+      Array.isArray(v)
+        ? v.map((x) => walkNode(x, node, k))
+        : walkNode(v, node, k)
+    );
+    const updated = updateNode(walked, prop);
+
+    if (
+      parent?.type !== "ExpressionStatement" &&
+      (updated !== walked || node.type === "CallExpression")
+    ) {
+      hasResolve = true;
+      return buildCallNode("resolveSingle", updated);
+    }
+
+    return updated;
+  };
+
+  const newTree = walkNode(tree);
+  for (const e of newTree.body.slice(0, -1)) {
+    hasResolve = true;
+    e.expression = buildCallNode("resolve", e.expression);
+  }
+  return { newTree, hasResolve };
 };
 
 const compileNode = (node, getVar, noTrack) => {
@@ -104,12 +117,8 @@ const compileNode = (node, getVar, noTrack) => {
       return getVar(name);
     };
     const tree = acorn.parse(code, { ecmaVersion: 2022 }) as any;
-    let hasResolve = updateTree(tree);
-    for (const e of tree.body.slice(0, -1)) {
-      hasResolve = true;
-      e.expression = buildCallNode("resolve", e.expression);
-    }
-    const newCode = astring.generate(tree).split(";\n").slice(0, -1);
+    const { newTree, hasResolve } = updateTree(tree);
+    const newCode = astring.generate(newTree).split(";\n").slice(0, -1);
     const func = Function(
       `"use strict";
       return function(getValue, resolveSingle, resolve) {
@@ -246,7 +255,15 @@ const compileNode = (node, getVar, noTrack) => {
   return createDerived(result);
 };
 
-export default (script, library = {}) => {
-  const ast = parse(script);
-  return compileNode(ast, (name) => library[name] || null, null);
+export default (script, library = {}, update) => {
+  createRoot(() => {
+    const compiled = compileNode(
+      parse(script),
+      (name) => library[name] || null,
+      null
+    );
+    createEffect(() => {
+      update(compiled);
+    });
+  });
 };
