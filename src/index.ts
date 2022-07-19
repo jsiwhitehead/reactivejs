@@ -1,5 +1,7 @@
 import render from "./render";
-import run, { createReactive, resolveSingle } from "./compile";
+import run, { createReactive, resolve } from "./compile";
+
+const isObject = (x) => Object.prototype.toString.call(x) === "[object Object]";
 
 const tick = createReactive(1);
 setInterval(() => {
@@ -16,68 +18,79 @@ run(
       line: x.line || 1.5,
       lineHeight: line > 3 ? line : line * size,
       gap: (lineHeight - size) * 0.5 + 1,
-      <div
-        style={{
-          font-size: px(size),
-          line-height: px(lineHeight),
-          font-family: font,
-          font-weight: bold && 'bold',
-          font-style: italic && 'italic',
-          text-decoration: (underline && 'underline') ?? (strike && 'strike'),
-          text-transform: uppercase && 'uppercase',
-          text-align: align,
-          color: color,
-          text-indent: px(indent),
-          padding:
-            isArray(pad) ?
-              px(pad[0]) + ' ' +
-              (px(pad[3] ?? pad[1] ?? pad[0])) + ' ' +
-              (px(pad[2] ?? pad[0])) + ' ' +
-              (px(pad[1] ?? pad[0])) :
-            typeof pad === 'object' ?
-              px(pad.top) + ' ' +
-              px(pad.right) + ' ' +
-              px(pad.bottom) + ' ' +
-              px(pad.left) :
+      style: {
+        font-size: px(size),
+        line-height: px(lineHeight),
+        font-family: font,
+        font-weight: bold && 'bold',
+        font-style: italic && 'italic',
+        text-decoration: (underline && 'underline') ?? (strike && 'strike'),
+        text-transform: uppercase && 'uppercase',
+        text-align: align,
+        color: color,
+        text-indent: px(indent),
+        padding:
+          isArray(pad) ?
+            px(pad[0]) + ' ' +
+            (px(pad[3] ?? pad[1] ?? pad[0])) + ' ' +
+            (px(pad[2] ?? pad[0])) + ' ' +
+            (px(pad[1] ?? pad[0]))
+          : typeof pad === 'object' ?
+            px(pad.top) + ' ' +
+            px(pad.right) + ' ' +
+            px(pad.bottom) + ' ' +
+            px(pad.left)
+          :
             px(pad),
-          background: fill,
-        }}
-        hover::{onmouseenter; true}
-        hover::{onmouseleave; false}
-        focus::{onfocus; true}
-        focus::{onblur; false}
-      >{...mapArray(x.items, map)}</div>
+        background: fill,
+      },
+      events: {
+        onmouseenter:: ,
+        onmouseleave:: ,
+        hover:: onmouseenter; true,
+        hover:: onmouseleave; false,
+        onfocus:: ,
+        onblur:: ,
+        focus:: onfocus; true,
+        focus:: onblur; false,
+      },
+      nextInline: inline || hasValues(x.items),
+      content:
+        nextInline ?
+          mapArray(x.items, (y)=> map(isObject(y) ? <a {...y} span={true}></a> : y))
+        :
+          mapArray(x.items, map),
+      span ?
+        <span style={style} {...events}>{...content}</span>
+      : nextInline ?
+        <div style={style} {...events}>
+          <div style={{ padding: "1px 0", min-height: px(size) }}>
+            <div style={{ margin-top: px(-gap), margin-bottom: px(-gap) }}>
+              {...content}
+            </div>
+          </div>
+        </div>
+      : stack ?
+        <div style={style} {...events}>
+          {...mapArray(content, (c, i)=> <div style={{ padding-top: px(i !== 0 && stack) }}>{c}</div>)}
+        </div>
+      :
+        <div style={style} {...events}>{...content}</div>,
     ),
-    map(<a color={hover ? "red" : "blue"}>Hi</a>)
+    map(
+      <a stack={10} color={hover ? "red" : "blue"}>
+        <a>Hi</a>
+        <a>There</a>
+      </a>
+    )
   )
   `,
   {
     tick,
-    isArray: (x) => {
-      const v = resolveSingle(x);
-      const res = Array.isArray(v);
-      return res;
-    },
-    isObject: (x) =>
-      Object.prototype.toString.call(resolveSingle(x)) === "[object Object]",
-    mapArray: (value, func) => {
-      const v = resolveSingle(value) || [];
-      return v.map((x) => func(x));
-    },
+    isArray: (v) => Array.isArray(resolve(v)),
+    isObject: (v) => isObject(resolve(v)),
+    mapArray: (v, f) => (resolve(v) || []).map((x, i) => f(x, i)),
+    hasValues: (v) => (resolve(v) || []).some((x) => !isObject(resolve(x))),
   },
   render(document.getElementById("app"))
 );
-
-// <div
-//         hover::{onmouseenter; true}
-//         hover::{onmouseleave; false}
-//         count::{onclick; (count + 1)}
-//         style={{
-//           color: hover ? "red" : "blue",
-//           background: "lightblue",
-//           padding: "50px",
-//         }}
-//       >
-//         <div>Count: {count}, Value: {value}, Tick: {tick}</div>
-//         <input type="text" value::{oninput?.target?.value}/>
-//       </div>

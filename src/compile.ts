@@ -24,14 +24,13 @@ export const createReactive = (initial?) => {
 
 export const isReactive = (x) => typeof x === "function" && x.isReactive;
 
-export const resolveSingle = (x) => (isReactive(x) ? resolveSingle(x()) : x);
-
-export const resolve = (node) => {
-  if (isReactive(node)) return resolve(node());
-  if (Array.isArray(node)) return node.map((x) => resolve(x));
+export const resolve = (node, deep = false) => {
+  if (isReactive(node)) return resolve(node(), deep);
+  if (!deep) return node;
+  if (Array.isArray(node)) return node.map((x) => resolve(x, true));
   if (isObject(node)) {
     return Object.keys(node).reduce(
-      (res, k) => ({ ...res, [k]: resolve(node[k]) }),
+      (res, k) => ({ ...res, [k]: resolve(node[k], true) }),
       {}
     );
   }
@@ -53,10 +52,7 @@ const buildCallNode = (func, arg) => ({
 });
 const updateNode = (node, prop) => {
   if (node.type === "Identifier" && prop !== "property") {
-    return buildCallNode("getValue", {
-      type: "Literal",
-      value: node.name,
-    });
+    return buildCallNode("getValue", { type: "Literal", value: node.name });
   }
   if (node.type === "MemberExpression") {
     return { ...node, optional: true };
@@ -81,7 +77,7 @@ const updateTree = (tree) => {
       (updated !== walked || node.type === "CallExpression")
     ) {
       hasResolve = true;
-      return buildCallNode("resolveSingle", updated);
+      return buildCallNode("resolve", updated);
     }
 
     return updated;
@@ -90,7 +86,7 @@ const updateTree = (tree) => {
   const newTree = walkNode(tree);
   for (const e of newTree.body.slice(0, -1)) {
     hasResolve = true;
-    e.expression = buildCallNode("resolve", e.expression);
+    e.expression = buildCallNode("resolveDeep", e.expression);
   }
   return { newTree, hasResolve };
 };
@@ -112,7 +108,7 @@ const compileNode = (node, getVar, noTrack) => {
         return compiled[index];
       }
       if (name === noTrack) {
-        return untrack(() => resolve(getVar(name)));
+        return untrack(() => resolve(getVar(name), true));
       }
       return getVar(name);
     };
@@ -121,7 +117,7 @@ const compileNode = (node, getVar, noTrack) => {
     const newCode = astring.generate(newTree).split(";\n").slice(0, -1);
     const func = Function(
       `"use strict";
-      return function(getValue, resolveSingle, resolve) {
+      return function(getValue, resolve, resolveDeep) {
         ${newCode
           .map((c, i) => `${i === newCode.length - 1 ? "return " : ""}${c};`)
           .join("\n")}
@@ -129,7 +125,7 @@ const compileNode = (node, getVar, noTrack) => {
     )();
     if (!hasResolve) return func(getValue);
     return createDerived(
-      () => func(getValue, resolveSingle, resolve),
+      () => func(getValue, resolve, (x) => resolve(x, true)),
       newCode.length > 1
     );
   }
@@ -147,14 +143,18 @@ const compileNode = (node, getVar, noTrack) => {
 
   if (node.type === "index") {
     return createDerived(() => {
-      const value = resolveSingle(getVar(node.name));
-      const index = resolveSingle(compileNode(node.items[0], getVar, noTrack));
+      const value = resolve(getVar(node.name));
+      const index = resolve(compileNode(node.items[0], getVar, noTrack));
       return value?.[index];
     });
   }
 
   if (node.type === "call") {
-    const func = getVar(node.name);
+    const base = compileNode([node.base], getVar, noTrack);
+    const func = node.path.reduce(
+      (res, p) => (typeof res[p] === "function" ? res[p].bind(res) : res[p]),
+      base
+    );
     const args = node.items.map((x) => compileNode(x, getVar, noTrack));
     return func(...args);
   }
@@ -196,7 +196,7 @@ const compileNode = (node, getVar, noTrack) => {
       (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
     )) {
       if (isObject(n) && n.type === "unpack") {
-        const v = resolveSingle(compileNode(n.value, getVar, noTrack));
+        const v = resolve(compileNode(n.value, getVar, noTrack));
         const block = isObject(v)
           ? v.type === "block"
             ? v
@@ -231,7 +231,7 @@ const compileNode = (node, getVar, noTrack) => {
           value.some((v) => typeof v === "string" && v.includes(";")));
       const target = newGetVar(key);
       createComputed(() => {
-        const res = resolve(source);
+        const res = resolve(source, true);
         if (!first) target.set(res);
         first = false;
       });

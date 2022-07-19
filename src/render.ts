@@ -1,6 +1,6 @@
 import { elementOpen, elementClose, patch, text } from "incremental-dom";
 
-import { isReactive, resolve, resolveSingle } from "./compile";
+import { isReactive, resolve } from "./compile";
 
 const isObject = (x) => Object.prototype.toString.call(x) === "[object Object]";
 
@@ -17,15 +17,15 @@ const kebabToCamel = (s) => {
 };
 
 const render = (data) => {
-  if (!isObject(data)) return text(data);
-
-  if (!data.items) {
-    return text(JSON.stringify(resolve(data), null, 2));
+  if (!isObject(data) || !data.items) {
+    return text(
+      typeof data === "string" ? data : JSON.stringify(resolve(data, true))
+    );
   }
 
-  const content = data.items.map((d) => resolveSingle(d));
+  const content = data.items.map((d) => resolve(d));
 
-  const values = resolve(data.values);
+  const values = resolve(data.values, true);
   const setters = Object.keys(data.values)
     .filter((k) => isReactive(data.values[k]) && k.startsWith("on"))
     .reduce(
@@ -51,7 +51,7 @@ const render = (data) => {
   };
 
   elementOpen(
-    resolveSingle(data.tag),
+    resolve(data.tag),
     null,
     null,
     ...Object.keys(props).reduce((res, k) => [...res, k, props[k]], [] as any[])
@@ -59,10 +59,10 @@ const render = (data) => {
 
   content.forEach((c) => render(c));
 
-  elementClose(resolveSingle(data.tag));
+  elementClose(resolve(data.tag));
 };
 
-export default (root) => (data) => patch(root, render, resolveSingle(data));
+export default (root) => (data) => patch(root, render, resolve(data));
 
 // const attributesMap = {
 //   accesskey: "accessKey",

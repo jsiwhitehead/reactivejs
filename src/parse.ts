@@ -142,23 +142,38 @@ s.addAttribute("ast", {
   bchar: (_) => null,
 
   value: (a) => {
-    for (let i = 0; i < a.ast.length - 1; i++) {
+    const ast = a.ast;
+    if (ast.length === 1) return ast;
+
+    const result = [] as any[];
+    for (let i = 0; i < ast.length - 1; i++) {
       if (
-        typeof a.ast[i] === "string" &&
-        /\w+$/.test(a.ast[i]) &&
-        typeof a.ast[i + 1] === "object" &&
-        ["brackets", "array"].includes(a.ast[i + 1].type)
+        typeof ast[i] === "string" &&
+        /[\w\.]+$/.test(ast[i]) &&
+        typeof ast[i + 1] === "object" &&
+        ["brackets", "array"].includes(ast[i + 1].type)
       ) {
-        const name = /\w+$/.exec(a.ast[i])![0];
-        a.ast[i + 1] = {
-          ...a.ast[i + 1],
-          type: a.ast[i + 1].type === "brackets" ? "call" : "index",
-          name,
-        };
-        a.ast[i] = a.ast[i].slice(0, -name.length);
+        const str = /[\w\.]+$/.exec(ast[i])![0];
+        const parts = str.split(/\./g);
+        if (parts[0] === "") {
+          parts[0] = result.pop();
+        } else {
+          result.push(ast[i].slice(0, -str.length));
+        }
+        const [base, ...path] = parts;
+        result.push({
+          ...ast[i + 1],
+          type: ast[i + 1].type === "brackets" ? "call" : "index",
+          base,
+          path,
+        });
+        i++;
+      } else {
+        result.push(ast[i]);
       }
     }
-    return a.ast;
+    result.push(ast[ast.length - 1]);
+    return result;
   },
 
   vchunk: (a) => a.sourceString,
