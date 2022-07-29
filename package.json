@@ -1,17 +1,19 @@
 {
   "name": "reactivejs",
   "source": "src/index.html",
+  "main": "lib/index.js",
   "scripts": {
-    "start": "parcel",
-    "build": "parcel build"
+    "build": "rimraf lib && tsc",
+    "test": "ts-node src/test"
   },
   "devDependencies": {
-    "parcel": "latest"
+    "rimraf": "^3.0.2",
+    "typescript": "^4.7.4"
   },
   "dependencies": {
-    "acorn": "^8.7.1",
+    "acorn": "^8.8.0",
     "astring": "^1.8.3",
-    "incremental-dom": "^0.7.0",
-    "ohm-js": "^16.3.4"
+    "ohm-js": "^16.3.4",
+    "ts-node": "^10.9.1"
   }
 }
