@@ -7,28 +7,8 @@ export { createReactive, isReactive, resolve } from "./util";
 
 const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
   const result = () => {
-    const unpackValues = {};
-    const partialContent = [] as any[];
-    for (const n of items.filter(
-      (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
-    )) {
-      if (isObject(n) && n.type === "unpack") {
-        const v = resolve(compileNode(n.value, getVar, noTrack));
-        const block = isObject(v)
-          ? v.type === "block"
-            ? v
-            : { values: v }
-          : { items: v };
-        Object.assign(unpackValues, block.values || {});
-        partialContent.push(
-          ...(block.items || []).map((x) => ({ compiled: true, value: x }))
-        );
-      } else {
-        partialContent.push({ compiled: false, value: n });
-      }
-    }
-
     const values = {};
+
     const assignItems = items
       .filter((n) => isObject(n) && n.type === "assign")
       .reduce((res, { key, value }) => ({ ...res, [key]: value }), {});
@@ -58,10 +38,27 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
       return res;
     };
 
-    for (const name of Object.keys(assignItems)) newGetVar(name);
-    for (const name of Object.keys(unpackValues)) {
-      if (values[name] === undefined) values[name] = unpackValues[name];
+    const partialContent = [] as any[];
+    for (const n of items.filter(
+      (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
+    )) {
+      if (isObject(n) && n.type === "unpack") {
+        const v = resolve(compileNode(n.value, getVar, noTrack));
+        const block = isObject(v)
+          ? v.type === "block"
+            ? v
+            : { values: v }
+          : { items: v };
+        Object.assign(values, block.values || {});
+        partialContent.push(
+          ...(block.items || []).map((x) => ({ compiled: true, value: x }))
+        );
+      } else {
+        partialContent.push({ compiled: false, value: n });
+      }
     }
+
+    for (const name of Object.keys(assignItems)) newGetVar(name);
 
     const mergeItems = items.filter((n) => isObject(n) && n.type === "merge");
     for (const { key, value } of mergeItems) {
@@ -89,6 +86,7 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
     if (type === "block") return { type: "block", tag, values, items: content };
     if (type === "object") return values;
     if (type === "array") return content;
+    return null;
   };
 
   if (!items.some((n) => isObject(n) && n.type === "unpack")) return result();
