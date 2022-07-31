@@ -26,11 +26,6 @@ export const resolve = (node, deep = false) => {
   if (isReactive(node)) return resolve(node(), deep);
   if (!deep) return node;
   if (Array.isArray(node)) return node.map((x) => resolve(x, true));
-  if (isObject(node)) {
-    return Object.keys(node).reduce(
-      (res, k) => ({ ...res, [k]: resolve(node[k], true) }),
-      {}
-    );
-  }
+  if (isObject(node)) return mapObject(node, (x) => resolve(x, true));
   return node;
 };

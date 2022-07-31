@@ -8,6 +8,9 @@ const grammar = String.raw`Maraca {
   function
     = "(" space* listOf<name, join> space* ")" space* "=>" space* value
 
+  functionsingle
+    = name space* "=>" space* value
+
   brackets
     = "(" space* items space* ")"
 
@@ -60,7 +63,7 @@ const grammar = String.raw`Maraca {
     = ~("<" | "{") any
 
   value
-    = (vchunk | xstring | ystring | function| brackets | object | array | block<name> | blockclosed<name>)+
+    = (function| functionsingle | vchunk | xstring | ystring | brackets | object | array | block<name> | blockclosed<name>)+
 
   vchunk = vchar+
 
@@ -111,6 +114,12 @@ s.addAttribute("ast", {
     body: b.ast,
   }),
 
+  functionsingle: (a, _1, _2, _3, b) => ({
+    type: "func",
+    args: a.ast,
+    body: b.ast,
+  }),
+
   brackets: (_1, _2, a, _3, _4) => ({ type: "brackets", items: a.ast }),
 
   object: (_1, _2, a, _3, _4) => ({ type: "object", items: a.ast }),
@@ -155,36 +164,22 @@ s.addAttribute("ast", {
 
   value: (a) => {
     const ast = a.ast;
-    if (ast.length === 1) return ast;
-
-    const result = [] as any[];
-    for (let i = 0; i < ast.length - 1; i++) {
+    const result = [ast[0]];
+    for (let i = 1; i < ast.length; i++) {
       if (
-        typeof ast[i] === "string" &&
-        /[\w\.]+$/.test(ast[i]) &&
-        typeof ast[i + 1] === "object" &&
-        ["brackets", "array"].includes(ast[i + 1].type)
+        (typeof ast[i - 1] !== "string" || /\S$/.test(ast[i - 1])) &&
+        typeof ast[i] === "object" &&
+        ["brackets", "array"].includes(ast[i].type)
       ) {
-        const str = /[\w\.]+$/.exec(ast[i])![0];
-        const parts = str.split(/\./g);
-        if (parts[0] === "") {
-          parts[0] = result.pop();
+        if (ast[i].type === "brackets") {
+          result.push("(", { ...ast[i], type: "array" }, ")");
         } else {
-          result.push(ast[i].slice(0, -str.length));
+          result.push("[", ast[i].items[0], "]");
         }
-        const [base, ...path] = parts;
-        result.push({
-          ...ast[i + 1],
-          type: ast[i + 1].type === "brackets" ? "call" : "index",
-          base,
-          path,
-        });
-        i++;
       } else {
         result.push(ast[i]);
       }
     }
-    result.push(ast[ast.length - 1]);
     return result;
   },
 

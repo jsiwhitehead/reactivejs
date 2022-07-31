@@ -97,6 +97,7 @@ const compileNode = (node, getVar, noTrack?) => {
     const { code, hasResolve } = updateCode(
       node.map((v, i) => (typeof v === "string" ? v : `$${i}`)).join("")
     );
+
     const compiled = [] as any[];
     const getValue = (name) => {
       if (name[0] === "$") {
@@ -111,17 +112,35 @@ const compileNode = (node, getVar, noTrack?) => {
       }
       return getVar(name);
     };
+
+    const doMember = (obj, prop) => {
+      const res = obj?.[prop];
+      return typeof res === "function" ? res.bind(obj) : res;
+    };
+    const doCall = (func, args) => {
+      if (func?.reactiveFunc || func?.name === "bound map") {
+        return func?.(...args);
+      }
+      return func?.(
+        ...args.map((a) => {
+          const v = resolve(a, true);
+          return typeof v === "function" ? (...x) => resolve(a(...x), true) : v;
+        })
+      );
+    };
+
     const func = Function(
       `"use strict";
-      return function(getValue, resolve, resolveDeep) {
+      return (getValue, doMember, doCall, resolve, resolveDeep) => {
         ${code
           .map((c, i) => `${i === code.length - 1 ? "return " : ""}${c};`)
           .join("\n")}
       };`
     )();
-    if (!hasResolve) return func(getValue);
+
+    if (!hasResolve) return func(getValue, doMember, doCall);
     return createDerived(
-      () => func(getValue, resolve, (x) => resolve(x, true)),
+      () => func(getValue, doMember, doCall, resolve, (x) => resolve(x, true)),
       code.length > 1
     );
   }
@@ -137,41 +156,6 @@ const compileNode = (node, getVar, noTrack?) => {
     };
     Object.assign(result, { reactiveFunc: true });
     return result;
-  }
-
-  if (node.type === "index") {
-    return createDerived(() => {
-      const value = resolve(getVar(node.base));
-      const index = resolve(compileNode(node.items[0], getVar, noTrack));
-      return value?.[index];
-    });
-  }
-
-  if (node.type === "call") {
-    const base = compileNode([node.base], getVar, noTrack);
-    const func = node.path.reduce(
-      (res, p) =>
-        typeof res?.[p] === "function" ? res?.[p].bind(res) : res?.[p],
-      base
-    );
-    const args = node.items.map((x) => compileNode(x, getVar, noTrack));
-    if (typeof func !== "function" || !func.reactiveFunc) {
-      return createDerived(() => {
-        const func = node.path.reduce((res, p, i) => {
-          const next = resolve(res[p]);
-          return i === node.path.length - 1 ? next.bind(res) : next;
-        }, resolve(base));
-        return func(
-          ...args.map((a) => {
-            const v = resolve(a, true);
-            return typeof v === "function"
-              ? (...x) => resolve(a(...x), true)
-              : v;
-          })
-        );
-      });
-    }
-    return func(...args);
   }
 
   return compileBlock(node, getVar, noTrack);
