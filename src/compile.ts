@@ -1,6 +1,76 @@
 import updateCode from "./code";
 import { createDerived, createReactive, isObject, resolve } from "./util";
 
+const compileNode = (node, getVar, noTrack?) => {
+  if (typeof node === "string") return node;
+
+  if (Array.isArray(node)) {
+    const { code, hasResolve } = updateCode(
+      node.map((v, i) => (typeof v === "string" ? v : `$${i}`)).join("")
+    );
+
+    const compiled = [] as any[];
+    const getValue = (name) => {
+      if (name[0] === "$") {
+        const index = parseInt(name.slice(1), 10);
+        if (!compiled[index]) {
+          compiled[index] = compileNode(node[index], getVar, noTrack);
+        }
+        return compiled[index];
+      }
+      if (name === noTrack) {
+        return createDerived(() => resolve(getVar(name), true), true);
+      }
+      return getVar(name);
+    };
+
+    const doMember = (obj, prop) => {
+      const res = obj?.[prop];
+      return typeof res === "function" ? res.bind(obj) : res;
+    };
+    const doCall = (func, args) => {
+      if (func?.reactiveFunc || func?.name === "bound map") {
+        return func?.(...args);
+      }
+      return func?.(
+        ...args.map((a) => {
+          const v = resolve(a, true);
+          return typeof v === "function" ? (...x) => resolve(a(...x), true) : v;
+        })
+      );
+    };
+
+    const func = Function(
+      `"use strict";
+      return (getValue, doMember, doCall, resolve, resolveDeep) => {
+        ${code
+          .map((c, i) => `${i === code.length - 1 ? "return " : ""}${c};`)
+          .join("\n")}
+      };`
+    )();
+
+    if (!hasResolve) return func(getValue, doMember, doCall);
+    return createDerived(() =>
+      func(getValue, doMember, doCall, resolve, (x) => resolve(x, true))
+    );
+  }
+
+  if (node.type === "func") {
+    const result = (...args) => {
+      const newGetVar = (name) => {
+        const index = node.args.indexOf(name);
+        if (index !== -1) return args[index];
+        return getVar(name);
+      };
+      return compileNode(node.body, newGetVar, noTrack);
+    };
+    Object.assign(result, { reactiveFunc: true });
+    return result;
+  }
+
+  return compileBlock(node, getVar, noTrack);
+};
+
 const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
   const result = () => {
     const values = {};
@@ -87,76 +157,6 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
 
   if (!items.some((n) => isObject(n) && n.type === "unpack")) return result();
   return createDerived(result);
-};
-
-const compileNode = (node, getVar, noTrack?) => {
-  if (typeof node === "string") return node;
-
-  if (Array.isArray(node)) {
-    const { code, hasResolve } = updateCode(
-      node.map((v, i) => (typeof v === "string" ? v : `$${i}`)).join("")
-    );
-
-    const compiled = [] as any[];
-    const getValue = (name) => {
-      if (name[0] === "$") {
-        const index = parseInt(name.slice(1), 10);
-        if (!compiled[index]) {
-          compiled[index] = compileNode(node[index], getVar, noTrack);
-        }
-        return compiled[index];
-      }
-      if (name === noTrack) {
-        return createDerived(() => resolve(getVar(name), true), true);
-      }
-      return getVar(name);
-    };
-
-    const doMember = (obj, prop) => {
-      const res = obj?.[prop];
-      return typeof res === "function" ? res.bind(obj) : res;
-    };
-    const doCall = (func, args) => {
-      if (func?.reactiveFunc || func?.name === "bound map") {
-        return func?.(...args);
-      }
-      return func?.(
-        ...args.map((a) => {
-          const v = resolve(a, true);
-          return typeof v === "function" ? (...x) => resolve(a(...x), true) : v;
-        })
-      );
-    };
-
-    const func = Function(
-      `"use strict";
-      return (getValue, doMember, doCall, resolve, resolveDeep) => {
-        ${code
-          .map((c, i) => `${i === code.length - 1 ? "return " : ""}${c};`)
-          .join("\n")}
-      };`
-    )();
-
-    if (!hasResolve) return func(getValue, doMember, doCall);
-    return createDerived(() =>
-      func(getValue, doMember, doCall, resolve, (x) => resolve(x, true))
-    );
-  }
-
-  if (node.type === "func") {
-    const result = (...args) => {
-      const newGetVar = (name) => {
-        const index = node.args.indexOf(name);
-        if (index !== -1) return args[index];
-        return getVar(name);
-      };
-      return compileNode(node.body, newGetVar, noTrack);
-    };
-    Object.assign(result, { reactiveFunc: true });
-    return result;
-  }
-
-  return compileBlock(node, getVar, noTrack);
 };
 
 export default compileNode;
