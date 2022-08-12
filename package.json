@@ -13,7 +13,7 @@
   "dependencies": {
     "acorn": "^8.8.0",
     "astring": "^1.8.3",
-    "ohm-js": "^16.3.4",
+    "ohm-js": "^16.4.0",
     "ts-node": "^10.9.1"
   }
 }

@@ -1,6 +1,7 @@
 import compileNode from "./compile";
 import parse from "./parse";
-import { createEffect, createRoot } from "./signal";
+import S from "./signal";
+
 export { createReactive, isReactive, resolve } from "./util";
 
 const compile = (source, getVar) => {
@@ -16,9 +17,9 @@ const compile = (source, getVar) => {
 };
 
 export default (source, library, update) => {
-  createRoot(() => {
+  S.root(() => {
     const compiled = compile(source, (name) => library[name] || null);
-    createEffect(() => {
+    S(() => {
       update(compiled);
     });
   });

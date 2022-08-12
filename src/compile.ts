@@ -1,5 +1,4 @@
 import updateCode from "./code";
-import { createComputed, untrack } from "./signal";
 import { createDerived, createReactive, isObject, resolve } from "./util";
 
 const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
@@ -68,9 +67,9 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
         (Array.isArray(value) &&
           value.some((v) => typeof v === "string" && v.includes(";")));
       const target = newGetVar(key);
-      createComputed(() => {
+      createDerived(() => {
         const res = resolve(source, true);
-        if (!first) target.set(res);
+        if (!first) target(res);
         first = false;
       });
     }
@@ -108,7 +107,7 @@ const compileNode = (node, getVar, noTrack?) => {
         return compiled[index];
       }
       if (name === noTrack) {
-        return untrack(() => resolve(getVar(name), true));
+        return createDerived(() => resolve(getVar(name), true), true);
       }
       return getVar(name);
     };
@@ -139,9 +138,8 @@ const compileNode = (node, getVar, noTrack?) => {
     )();
 
     if (!hasResolve) return func(getValue, doMember, doCall);
-    return createDerived(
-      () => func(getValue, doMember, doCall, resolve, (x) => resolve(x, true)),
-      code.length > 1
+    return createDerived(() =>
+      func(getValue, doMember, doCall, resolve, (x) => resolve(x, true))
     );
   }
 

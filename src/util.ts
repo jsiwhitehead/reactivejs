@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "./signal";
+import S from "./signal";
 
 export const isObject = (x) =>
   Object.prototype.toString.call(x) === "[object Object]";
@@ -7,17 +7,15 @@ export const mapObject = (obj, map) =>
   Object.keys(obj).reduce((res, k) => ({ ...res, [k]: map(obj[k], k) }), {});
 
 export const createReactive = (initial?) => {
-  const [get, set] = createSignal(initial, { equals: false });
-  Object.assign(get, { isReactive: true, set });
-  return get as any;
+  const result = S.data(initial);
+  Object.assign(result, { isReactive: true });
+  return result as any;
 };
 
-export const createDerived = (func, alwaysTrigger = false) => {
-  const result = createMemo(func, null, {
-    equals: alwaysTrigger ? false : undefined,
-  });
+export const createDerived = (func, untrack = false) => {
+  const result = untrack ? S.on([] as any, func) : S(func);
   Object.assign(result, { isReactive: true });
-  return result;
+  return result as any;
 };
 
 export const isReactive = (x) => typeof x === "function" && x.isReactive;
