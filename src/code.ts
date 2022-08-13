@@ -19,7 +19,7 @@ const updateNode = (node, parent, prop) => {
     return buildCallNode("doMember", node.object, node.property);
   }
   if (node.type === "CallExpression") {
-    return buildCallNode("doCall", node.callee, ...node.arguments);
+    return buildCallNode("doCall", node.callee, node.arguments[0]);
   }
   return node;
 };

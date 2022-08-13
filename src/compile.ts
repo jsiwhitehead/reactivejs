@@ -75,6 +75,28 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
   const result = () => {
     const values = {};
 
+    const partialValues = {};
+    const partialContent = [] as any[];
+    for (const n of items.filter(
+      (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
+    )) {
+      if (isObject(n) && n.type === "unpack") {
+        const v = resolve(compileNode(n.value, getVar, noTrack));
+        const block = isObject(v)
+          ? v.type === "block"
+            ? v
+            : { values: v }
+          : { items: v };
+        Object.assign(values, block.values || {});
+        Object.assign(partialValues, block.values || {});
+        partialContent.push(
+          ...(block.items || []).map((x) => ({ compiled: true, value: x }))
+        );
+      } else {
+        partialContent.push({ compiled: false, value: n });
+      }
+    }
+
     const assignItems = items
       .filter((n) => isObject(n) && n.type === "assign")
       .reduce((res, { key, value }) => ({ ...res, [key]: value }), {});
@@ -92,7 +114,9 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
               assignItems[name].length === 1 &&
               assignItems[name][0].type === "func"
             )
-              ? getVar(n, c)
+              ? partialValues[n] !== undefined
+                ? partialValues[n]
+                : getVar(n, c)
               : newGetVar(n, c),
           noTrack
         ));
@@ -104,26 +128,7 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
       return res;
     };
 
-    const partialContent = [] as any[];
-    for (const n of items.filter(
-      (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
-    )) {
-      if (isObject(n) && n.type === "unpack") {
-        const v = resolve(compileNode(n.value, getVar, noTrack));
-        const block = isObject(v)
-          ? v.type === "block"
-            ? v
-            : { values: v }
-          : { items: v };
-        Object.assign(values, block.values || {});
-        partialContent.push(
-          ...(block.items || []).map((x) => ({ compiled: true, value: x }))
-        );
-      } else {
-        partialContent.push({ compiled: false, value: n });
-      }
-    }
-
+    for (const name of Object.keys(assignItems)) delete values[name];
     for (const name of Object.keys(assignItems)) newGetVar(name);
 
     const mergeItems = items.filter((n) => isObject(n) && n.type === "merge");
