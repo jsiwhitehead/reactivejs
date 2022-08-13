@@ -1,5 +1,7 @@
 import ohm from "ohm-js";
 
+import updateCode from "./code";
+
 const grammar = String.raw`Maraca {
 
   start
@@ -155,7 +157,11 @@ s.addAttribute("ast", {
 
   bassign: (a, _1, b) => ({ type: "assign", key: a.ast, value: b.ast }),
 
-  btrue: (a) => ({ type: "assign", key: a.ast, value: ["true"] }),
+  btrue: (a) => ({
+    type: "assign",
+    key: a.ast,
+    value: { type: "value", code: "return true;" },
+  }),
 
   bcontent: (a) => a.ast,
 
@@ -185,7 +191,12 @@ s.addAttribute("ast", {
         result.push(ast[i]);
       }
     }
-    return result;
+
+    const values = [] as any[];
+    const code = result
+      .map((v) => (typeof v === "string" ? v : `$${values.push(v) - 1}`))
+      .join("");
+    return { type: "value", values, ...updateCode(code) };
   },
 
   vchunk: (a) => a.sourceString,

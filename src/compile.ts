@@ -1,20 +1,31 @@
-import updateCode from "./code";
 import { createDerived, createReactive, isObject, resolve } from "./util";
+
+const doMember = (obj, prop) => {
+  const res = obj?.[prop];
+  return typeof res === "function" ? res.bind(obj) : res;
+};
+const doCall = (func, args) => {
+  if (func?.reactiveFunc || func?.name === "bound map") {
+    return func?.(...args);
+  }
+  return func?.(
+    ...args.map((a) => {
+      const v = resolve(a, true);
+      return typeof v === "function" ? (...x) => resolve(a(...x), true) : v;
+    })
+  );
+};
 
 const compileNode = (node, getVar, noTrack?) => {
   if (typeof node === "string") return node;
 
-  if (Array.isArray(node)) {
-    const { code, hasResolve } = updateCode(
-      node.map((v, i) => (typeof v === "string" ? v : `$${i}`)).join("")
-    );
-
+  if (node.type === "value") {
     const compiled = [] as any[];
     const getValue = (name) => {
       if (name[0] === "$") {
         const index = parseInt(name.slice(1), 10);
         if (!compiled[index]) {
-          compiled[index] = compileNode(node[index], getVar, noTrack);
+          compiled[index] = compileNode(node.values[index], getVar, noTrack);
         }
         return compiled[index];
       }
@@ -24,32 +35,14 @@ const compileNode = (node, getVar, noTrack?) => {
       return getVar(name);
     };
 
-    const doMember = (obj, prop) => {
-      const res = obj?.[prop];
-      return typeof res === "function" ? res.bind(obj) : res;
-    };
-    const doCall = (func, args) => {
-      if (func?.reactiveFunc || func?.name === "bound map") {
-        return func?.(...args);
-      }
-      return func?.(
-        ...args.map((a) => {
-          const v = resolve(a, true);
-          return typeof v === "function" ? (...x) => resolve(a(...x), true) : v;
-        })
-      );
-    };
-
     const func = Function(
       `"use strict";
       return (getValue, doMember, doCall, resolve, resolveDeep) => {
-        ${code
-          .map((c, i) => `${i === code.length - 1 ? "return " : ""}${c};`)
-          .join("\n")}
+        ${node.code}
       };`
     )();
 
-    if (!hasResolve) return func(getValue, doMember, doCall);
+    if (!node.hasResolve) return func(getValue, doMember, doCall);
     return createDerived(() =>
       func(getValue, doMember, doCall, resolve, (x) => resolve(x, true))
     );
@@ -137,10 +130,7 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
     }
     for (const { key, value } of mergeItems.filter((n) => n.value)) {
       const source = compileNode(value, newGetVar, key);
-      let first =
-        (typeof value === "string" && value.includes(";")) ||
-        (Array.isArray(value) &&
-          value.some((v) => typeof v === "string" && v.includes(";")));
+      let first = isObject(value) && value.type === "value" && value.multi;
       const target = newGetVar(key);
       createDerived(() => {
         const res = resolve(source, true);

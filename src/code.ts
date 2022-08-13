@@ -58,8 +58,7 @@ export default (code) => {
     e.expression = buildCallNode("resolveDeep", e.expression);
   }
 
-  return {
-    code: astring.generate(tree).split(";\n").slice(0, -1),
-    hasResolve,
-  };
+  const newCode = astring.generate(tree).split(";\n");
+  newCode[newCode.length - 2] = "return " + newCode[newCode.length - 2];
+  return { code: newCode.join(";\n"), multi: newCode.length > 2, hasResolve };
 };
