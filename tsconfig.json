@@ -1,9 +1,8 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "module": "ESNext",
+    "module": "CommonJS",
     "lib": ["ESNext", "DOM"],
-    "moduleResolution": "Node",
     "outDir": "lib",
     "strict": true,
     "sourceMap": true,
@@ -13,11 +12,6 @@
     "skipLibCheck": true,
     "noImplicitAny": false,
     "downlevelIteration": true
-  },
-  "ts-node": {
-    "compilerOptions": {
-      "module": "CommonJS"
-    }
   },
   "include": ["src"]
 }

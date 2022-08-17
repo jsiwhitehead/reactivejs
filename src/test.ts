@@ -1,10 +1,15 @@
-import run, { createReactive, resolve } from "./index";
+import run from "./index";
 
-const tick = createReactive(1);
-setInterval(() => {
-  tick(tick() + 1);
-}, 1000);
-
-run(`tick * tick`, { tick }, (data) =>
-  console.log(JSON.stringify(resolve(data, true), null, 2))
+run(
+  `tick; (tick + 1)`,
+  (createData) => {
+    const tick = createData(0);
+    setInterval(() => {
+      tick.set(tick.get() + 1);
+    }, 1000);
+    return { tick };
+  },
+  (data, get) => {
+    console.log(JSON.stringify(get(data, true), null, 2));
+  }
 );
