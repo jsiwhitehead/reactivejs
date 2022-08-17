@@ -2,9 +2,11 @@ import compileNode from "./compile";
 import parse from "./parse";
 import run from "./streams";
 
-const compile = (createData, create, source, getVar) => {
+export { atom, derived, get } from "./streams";
+
+const compile = (source, getVar) => {
   if (typeof source === "string") {
-    return compileNode(createData, create, parse(source), getVar);
+    return compileNode(parse(source), getVar);
   }
   const values = {};
   const newGetVar = (name) => {
@@ -12,12 +14,7 @@ const compile = (createData, create, source, getVar) => {
       return values[name];
     }
     if (source[name]) {
-      return (values[name] = compile(
-        createData,
-        create,
-        source[name],
-        newGetVar
-      ));
+      return (values[name] = compile(source[name], newGetVar));
     }
     return getVar(name);
   };
@@ -26,11 +23,11 @@ const compile = (createData, create, source, getVar) => {
 };
 
 export default (source, library, update) => {
-  run((createData, create) => {
-    const lib = library(createData);
-    const compiled = compile(createData, create, source, (name) => lib[name]);
-    return (get) => {
-      update(compiled, get);
+  run(() => {
+    const lib = library();
+    const compiled = compile(source, (name) => lib[name]);
+    return () => {
+      update(compiled);
     };
   });
 };

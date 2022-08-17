@@ -1,15 +1,15 @@
-import run from "./index";
+import run, { atom, get } from "./index";
 
 run(
   `tick; (tick + 1)`,
-  (createData) => {
-    const tick = createData(0);
+  () => {
+    const tick = atom(0);
     setInterval(() => {
       tick.set(tick.get() + 1);
     }, 1000);
     return { tick };
   },
-  (data, get) => {
+  (data) => {
     console.log(JSON.stringify(get(data, true), null, 2));
   }
 );

@@ -1,5 +1,14 @@
 import { isObject, mapObject } from "./util";
 
+let context = null as any;
+const withContext = (queue, index, observe, func) => {
+  const current = context;
+  context = { queue, index, observe };
+  const result = func();
+  context = current;
+  return result;
+};
+
 const compare = (a, b) => {
   const l = Math.max(a.length, b.length);
   for (let i = 0; i < l; i++) {
@@ -28,7 +37,7 @@ class Queue {
     for (const s of streams) {
       if (s.index) insertSorted(this.queue, s);
     }
-    if (first) setTimeout(() => this.next());
+    if (first) this.next();
   }
   remove(stream) {
     if (this.queue) {
@@ -51,14 +60,16 @@ export class SourceStream {
   isStream = true;
 
   listeners = new Set<any>();
+  queue;
   value = null;
   set;
 
-  constructor(queue: Queue, initial) {
+  constructor(initial) {
+    this.queue = context.queue;
     this.value = initial;
     this.set = (value) => {
       this.value = value;
-      queue.add(this.listeners);
+      this.queue.add(this.listeners);
     };
   }
 
@@ -78,21 +89,23 @@ export class Stream {
   isStream = true;
 
   listeners = new Set<any>();
+  queue;
   index;
   value = null;
   start;
   update;
   stop;
 
-  constructor(queue: Queue, index, run) {
+  constructor(run) {
     const obj = {};
-    this.index = index;
+    this.queue = context.queue;
+    this.index = context.index;
     this.start = () => {
       let firstUpdate = true;
       const disposers = [] as any[];
       const set = (value) => {
         this.value = value;
-        if (!firstUpdate) queue.add(this.listeners);
+        if (!firstUpdate) this.queue.add(this.listeners);
       };
       const update = run(set, (d) => disposers.push(d));
 
@@ -102,25 +115,17 @@ export class Stream {
         active.add(s);
         return s.value;
       };
-      const get = (data, deep = false, sample = false) => {
-        if (typeof data === "object" && data.isStream) {
-          return get(observe(data, sample), deep);
-        }
-        if (!deep) return data;
-        if (Array.isArray(data)) return data.map((x) => get(x, true));
-        if (isObject(data)) return mapObject(data, (x) => get(x, true));
-        return data;
-      };
-      let counter = 0;
-      const create = (run) => new Stream(queue, [...index, counter++], run);
-      if (typeof update === "function") update(get, create);
+      if (typeof update === "function") {
+        withContext(this.queue, [...this.index, 0], observe, update);
+      }
       firstUpdate = false;
 
       this.update = () => {
         const prevActive = active;
         active = new Set();
-        counter = 0;
-        if (typeof update === "function") update(get, create);
+        if (typeof update === "function") {
+          withContext(this.queue, [...this.index, 0], observe, update);
+        }
         for (const s of prevActive) {
           if (!active.has(s)) {
             s.removeListener(this);
@@ -129,7 +134,7 @@ export class Stream {
         }
       };
       this.stop = () => {
-        queue.remove(this);
+        this.queue.remove(this);
         for (const s of active.values()) {
           s.removeListener(this);
           s.removeListener(obj);
@@ -152,13 +157,32 @@ export class Stream {
   }
 }
 
-export default (func) => {
-  const queue = new Queue();
-  const createData = (initial) => new SourceStream(queue, initial);
-  let counter = 0;
-  const create = (run) => new Stream(queue, [counter++], run);
-  const update = func(createData, create);
-  const stream = create(() => update);
-  stream.start();
-  return () => stream.stop();
+export const atom = (initial?) => new SourceStream(initial) as any;
+
+export const reactive = (run) => {
+  context.index = [
+    ...context.index.slice(0, -1),
+    context.index[context.index.length - 1] + 1,
+  ];
+  return new Stream(run) as any;
 };
+
+export const derived = (map) => reactive((set) => () => set(map()));
+
+export const get = (x, deep = false, sample = false) => {
+  if (typeof x === "object" && x.isStream) {
+    return get(context.observe(x, sample), deep);
+  }
+  if (!deep) return x;
+  if (Array.isArray(x)) return x.map((y) => get(y, true));
+  if (isObject(x)) return mapObject(x, (y) => get(y, true));
+  return x;
+};
+
+export default (func) =>
+  withContext(new Queue(), [0], null, () => {
+    const update = func();
+    const stream = reactive(() => update);
+    stream.start();
+    return () => stream.stop();
+  });
