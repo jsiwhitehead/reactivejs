@@ -115,7 +115,7 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
         ));
       }
       const res = getVar(name, captureUndef ? false : captureUndef);
-      if (res === null && captureUndef) {
+      if (res === undefined && captureUndef) {
         return (values[name] = createReactive());
       }
       return res;
@@ -126,7 +126,7 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
 
     const mergeItems = items.filter((n) => isObject(n) && n.type === "merge");
     for (const { key, value } of mergeItems) {
-      if (!value || !getVar(key)) values[key] = createReactive();
+      if (!value || !getVar(key, false)) values[key] = createReactive();
     }
     for (const { key, value } of mergeItems.filter((n) => n.value)) {
       const source = compileNode(value, newGetVar, key);

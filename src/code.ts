@@ -10,7 +10,10 @@ const buildCallNode = (func, ...args) => ({
 });
 
 const updateNode = (node, parent, prop) => {
-  if (node.type === "Identifier") {
+  if (
+    node.type === "Identifier" &&
+    !["undefined", "null"].includes(node.name)
+  ) {
     const value = { type: "Literal", value: node.name };
     if (prop === "property" && !parent.computed) return value;
     return buildCallNode("getValue", value);

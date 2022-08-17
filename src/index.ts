@@ -18,7 +18,7 @@ const compile = (source, getVar) => {
 
 export default (source, library, update) => {
   S.root(() => {
-    const compiled = compile(source, (name) => library[name] || null);
+    const compiled = compile(source, (name) => library[name]);
     S(() => {
       update(compiled);
     });
