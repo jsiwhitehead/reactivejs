@@ -8,6 +8,7 @@ export declare class SourceStream {
     get(): null;
     addListener(x: any): void;
     removeListener(x: any): void;
+    observe(): any;
 }
 export declare class Stream {
     isStream: boolean;
@@ -21,10 +22,10 @@ export declare class Stream {
     constructor(run: any);
     addListener(x: any): void;
     removeListener(x: any): void;
+    observe(sample?: boolean): any;
 }
 export declare const atom: (initial?: any) => any;
-export declare const reactive: (run: any) => any;
+export declare const stream: (run: any) => any;
 export declare const derived: (map: any) => any;
-export declare const get: (x: any, deep?: boolean, sample?: boolean) => any;
 declare const _default: (func: any) => any;
 export default _default;

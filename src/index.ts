@@ -2,7 +2,8 @@ import compileNode from "./compile";
 import parse from "./parse";
 import run from "./streams";
 
-export { atom, derived, get } from "./streams";
+export { atom, derived, stream } from "./streams";
+export { get } from "./util";
 
 const compile = (source, getVar) => {
   if (typeof source === "string") {
@@ -22,7 +23,7 @@ const compile = (source, getVar) => {
   return values;
 };
 
-export default (source, library, update) => {
+export default (library, source, update) => {
   run(() => {
     const lib = library();
     const compiled = compile(source, (name) => lib[name]);

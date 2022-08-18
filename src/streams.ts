@@ -1,5 +1,3 @@
-import { isObject, mapObject } from "./util";
-
 let context = null as any;
 const withContext = (queue, index, observe, func) => {
   const current = context;
@@ -83,6 +81,10 @@ export class SourceStream {
   removeListener(x) {
     if (this.listeners.has(x)) this.listeners.delete(x);
   }
+
+  observe() {
+    return context.observe(this);
+  }
 }
 
 export class Stream {
@@ -155,11 +157,15 @@ export class Stream {
       if (this.listeners.size === 0) this.stop();
     }
   }
+
+  observe(sample = false) {
+    return context.observe(this, sample);
+  }
 }
 
 export const atom = (initial?) => new SourceStream(initial) as any;
 
-export const reactive = (run) => {
+export const stream = (run) => {
   context.index = [
     ...context.index.slice(0, -1),
     context.index[context.index.length - 1] + 1,
@@ -167,22 +173,11 @@ export const reactive = (run) => {
   return new Stream(run) as any;
 };
 
-export const derived = (map) => reactive((set) => () => set(map()));
-
-export const get = (x, deep = false, sample = false) => {
-  if (typeof x === "object" && x.isStream) {
-    return get(context.observe(x, sample), deep);
-  }
-  if (!deep) return x;
-  if (Array.isArray(x)) return x.map((y) => get(y, true));
-  if (isObject(x)) return mapObject(x, (y) => get(y, true));
-  return x;
-};
+export const derived = (map) => stream((set) => () => set(map()));
 
 export default (func) =>
   withContext(new Queue(), [0], null, () => {
-    const update = func();
-    const stream = reactive(() => update);
+    const stream = derived(func());
     stream.start();
     return () => stream.stop();
   });

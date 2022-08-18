@@ -1,7 +1,6 @@
 import run, { atom, get } from "./index";
 
 run(
-  `tick; (tick + 1)`,
   () => {
     const tick = atom(0);
     setInterval(() => {
@@ -9,6 +8,7 @@ run(
     }, 1000);
     return { tick };
   },
+  `tick; (tick + 1)`,
   (data) => {
     console.log(JSON.stringify(get(data, true), null, 2));
   }

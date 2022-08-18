@@ -1,5 +1,5 @@
-import { atom, derived, get } from "./streams";
-import { isObject } from "./util";
+import { atom, derived } from "./streams";
+import { get, isObject } from "./util";
 
 const doMember = (obj, prop) => {
   const res = obj[prop];
