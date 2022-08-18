@@ -1,19 +1,17 @@
 export declare class SourceStream {
     isStream: boolean;
     listeners: Set<any>;
-    queue: any;
     value: null;
     set: any;
     constructor(initial: any);
-    get(): null;
+    update(map: any): void;
     addListener(x: any): void;
     removeListener(x: any): void;
-    observe(): any;
+    get(): any;
 }
 export declare class Stream {
     isStream: boolean;
     listeners: Set<any>;
-    queue: any;
     index: any;
     value: null;
     start: any;
@@ -22,7 +20,7 @@ export declare class Stream {
     constructor(run: any);
     addListener(x: any): void;
     removeListener(x: any): void;
-    observe(sample?: boolean): any;
+    get(sample?: boolean): any;
 }
 export declare const atom: (initial?: any) => any;
 export declare const stream: (run: any) => any;

@@ -1,15 +1,10 @@
-import run, { atom, get } from "./index";
+import run, { atom, resolve } from "./index";
 
-run(
-  () => {
-    const tick = atom(0);
-    setInterval(() => {
-      tick.set(tick.get() + 1);
-    }, 1000);
-    return { tick };
-  },
-  `tick; (tick + 1)`,
-  (data) => {
-    console.log(JSON.stringify(get(data, true), null, 2));
-  }
-);
+const tick = atom(1);
+setInterval(() => {
+  tick.update((x) => x + 1);
+}, 1000);
+
+run({ tick }, `tick * tick`, (data) => {
+  console.log(JSON.stringify(resolve(data, true), null, 2));
+});

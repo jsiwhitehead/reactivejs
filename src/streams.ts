@@ -1,7 +1,7 @@
 let context = null as any;
-const withContext = (queue, index, observe, func) => {
+const withContext = (index, observe, func) => {
   const current = context;
-  context = { queue, index, observe };
+  context = { index, observe };
   const result = func();
   context = current;
   return result;
@@ -26,7 +26,6 @@ const insertSorted = (array, value) => {
   }
   if (array[low] !== value) array.splice(low, 0, value);
 };
-
 class Queue {
   queue: any[] | null = null;
   add(streams: Set<any>) {
@@ -53,26 +52,25 @@ class Queue {
     }
   }
 }
+const queue = new Queue();
 
 export class SourceStream {
   isStream = true;
 
   listeners = new Set<any>();
-  queue;
   value = null;
   set;
 
   constructor(initial) {
-    this.queue = context.queue;
     this.value = initial;
     this.set = (value) => {
       this.value = value;
-      this.queue.add(this.listeners);
+      queue.add(this.listeners);
     };
   }
 
-  get() {
-    return this.value;
+  update(map) {
+    this.set(map(this.value));
   }
 
   addListener(x) {
@@ -82,7 +80,7 @@ export class SourceStream {
     if (this.listeners.has(x)) this.listeners.delete(x);
   }
 
-  observe() {
+  get() {
     return context.observe(this);
   }
 }
@@ -91,7 +89,6 @@ export class Stream {
   isStream = true;
 
   listeners = new Set<any>();
-  queue;
   index;
   value = null;
   start;
@@ -100,14 +97,13 @@ export class Stream {
 
   constructor(run) {
     const obj = {};
-    this.queue = context.queue;
     this.index = context.index;
     this.start = () => {
       let firstUpdate = true;
       const disposers = [] as any[];
       const set = (value) => {
         this.value = value;
-        if (!firstUpdate) this.queue.add(this.listeners);
+        if (!firstUpdate) queue.add(this.listeners);
       };
       const update = run(set, (d) => disposers.push(d));
 
@@ -118,7 +114,7 @@ export class Stream {
         return s.value;
       };
       if (typeof update === "function") {
-        withContext(this.queue, [...this.index, 0], observe, update);
+        withContext([...this.index, 0], observe, update);
       }
       firstUpdate = false;
 
@@ -126,7 +122,7 @@ export class Stream {
         const prevActive = active;
         active = new Set();
         if (typeof update === "function") {
-          withContext(this.queue, [...this.index, 0], observe, update);
+          withContext([...this.index, 0], observe, update);
         }
         for (const s of prevActive) {
           if (!active.has(s)) {
@@ -136,7 +132,7 @@ export class Stream {
         }
       };
       this.stop = () => {
-        this.queue.remove(this);
+        queue.remove(this);
         for (const s of active.values()) {
           s.removeListener(this);
           s.removeListener(obj);
@@ -158,7 +154,7 @@ export class Stream {
     }
   }
 
-  observe(sample = false) {
+  get(sample = false) {
     return context.observe(this, sample);
   }
 }
@@ -175,8 +171,9 @@ export const stream = (run) => {
 
 export const derived = (map) => stream((set) => () => set(map()));
 
+let count = 0;
 export default (func) =>
-  withContext(new Queue(), [0], null, () => {
+  withContext([count++, 0], null, () => {
     const stream = derived(func());
     stream.start();
     return () => stream.stop();

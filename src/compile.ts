@@ -1,5 +1,5 @@
 import { atom, derived } from "./streams";
-import { get, isObject } from "./util";
+import { resolve, isObject } from "./util";
 
 const doMember = (obj, prop) => {
   const res = obj[prop];
@@ -9,8 +9,8 @@ const doCall = (func, args) => {
   if (func.reactiveFunc || func.name === "bound map") return func(...args);
   return func(
     ...args.map((a) => {
-      const v = get(a, true);
-      return typeof v === "function" ? (...x) => get(v(...x), true) : v;
+      const v = resolve(a, true);
+      return typeof v === "function" ? (...x) => resolve(v(...x), true) : v;
     })
   );
 };
@@ -29,7 +29,7 @@ const compileNode = (node, getVar, noTrack?) => {
         return compiled[index];
       }
       if (name === noTrack) {
-        return derived(() => get(getVar(name), true, true));
+        return derived(() => resolve(getVar(name), true, true));
       }
       return getVar(name);
     };
@@ -43,7 +43,7 @@ const compileNode = (node, getVar, noTrack?) => {
 
     if (!node.hasResolve) return func(getValue, doMember, doCall);
     return derived(() =>
-      func(getValue, doMember, doCall, get, (x) => get(x, true))
+      func(getValue, doMember, doCall, resolve, (x) => resolve(x, true))
     );
   }
 
@@ -73,7 +73,7 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
       (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
     )) {
       if (isObject(n) && n.type === "unpack") {
-        const v = get(compileNode(n.value, getVar, noTrack));
+        const v = resolve(compileNode(n.value, getVar, noTrack));
         const block = isObject(v)
           ? v.type === "block"
             ? v
@@ -96,7 +96,7 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
       name,
       captureUndef = type === "block" ? true : undefined
     ) => {
-      if (values[name] !== undefined) return values[name];
+      if (values.hasOwnProperty(name)) return values[name];
       if (assignItems[name]) {
         return (values[name] = compileNode(
           assignItems[name],
@@ -106,7 +106,7 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
               assignItems[name].length === 1 &&
               assignItems[name][0].type === "func"
             )
-              ? partialValues[n] !== undefined
+              ? partialValues.hasOwnProperty(n)
                 ? partialValues[n]
                 : getVar(n, c)
               : newGetVar(n, c),
@@ -114,9 +114,7 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
         ));
       }
       const res = getVar(name, captureUndef ? false : captureUndef);
-      if (res === undefined && captureUndef) {
-        return (values[name] = atom());
-      }
+      if (res === undefined && captureUndef) return (values[name] = atom());
       return res;
     };
 
@@ -131,9 +129,9 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
       const source = compileNode(value, newGetVar, key);
       let first = isObject(value) && value.type === "value" && value.multi;
       const target = newGetVar(key);
-      get(
+      resolve(
         derived(() => {
-          const res = get(source, true);
+          const res = resolve(source, true);
           if (!first) target(res);
           first = false;
         })
