@@ -58,7 +58,10 @@ export default (code) => {
   const tree = walkNode(acorn.parse(code, { ecmaVersion: 2022 }));
   for (const e of tree.body.slice(0, -1)) {
     hasResolve = true;
-    e.expression = buildCallNode("resolveDeep", e.expression);
+    e.expression = buildCallNode("resolve", e.expression, {
+      type: "Identifier",
+      name: "true",
+    });
   }
 
   const newCode = astring.generate(tree).split(";\n");

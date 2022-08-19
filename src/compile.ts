@@ -1,4 +1,4 @@
-import { atom, derived } from "./streams";
+import { atom, derived, stream } from "./streams";
 import { resolve, isObject } from "./util";
 
 const doMember = (obj, prop) => {
@@ -15,7 +15,7 @@ const doCall = (func, args) => {
   );
 };
 
-const compileNode = (node, getVar, noTrack?) => {
+const compileNode = (node, getVar) => {
   if (typeof node === "string") return node;
 
   if (node.type === "value") {
@@ -24,27 +24,22 @@ const compileNode = (node, getVar, noTrack?) => {
       if (name[0] === "$") {
         const index = parseInt(name.slice(1), 10);
         if (!compiled[index]) {
-          compiled[index] = compileNode(node.values[index], getVar, noTrack);
+          compiled[index] = compileNode(node.values[index], getVar);
         }
         return compiled[index];
-      }
-      if (name === noTrack) {
-        return derived(() => resolve(getVar(name), true, true));
       }
       return getVar(name);
     };
 
     const func = Function(
       `"use strict";
-      return (getValue, doMember, doCall, resolve, resolveDeep) => {
+      return (getValue, doMember, doCall, resolve) => {
         ${node.code}
       };`
     )();
 
     if (!node.hasResolve) return func(getValue, doMember, doCall);
-    return derived(() =>
-      func(getValue, doMember, doCall, resolve, (x) => resolve(x, true))
-    );
+    return derived(() => func(getValue, doMember, doCall, resolve));
   }
 
   if (node.type === "func") {
@@ -54,16 +49,28 @@ const compileNode = (node, getVar, noTrack?) => {
         if (index !== -1) return args[index];
         return getVar(name);
       };
-      return compileNode(node.body, newGetVar, noTrack);
+      return compileNode(node.body, newGetVar);
     };
     Object.assign(result, { reactiveFunc: true });
     return result;
   }
 
-  return compileBlock(node, getVar, noTrack);
+  return compileBlock(node, getVar);
 };
 
-const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
+const unpackValue = (v) => {
+  if (isObject(v)) return v.type === "block" ? v : { values: v, items: [] };
+  if (Array.isArray(v)) return { values: {}, items: v };
+  return { values: {}, items: [] };
+};
+const constructBlock = (type, tag, values, items) => {
+  if (type === "brackets") return items[items.length - 1];
+  if (type === "block") return { type: "block", tag, values, items };
+  if (type === "object") return values;
+  if (type === "array") return items;
+  return null;
+};
+const compileBlock = ({ type, tag, items }, getVar) => {
   const result = () => {
     const values = {};
 
@@ -73,16 +80,11 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
       (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
     )) {
       if (isObject(n) && n.type === "unpack") {
-        const v = resolve(compileNode(n.value, getVar, noTrack));
-        const block = isObject(v)
-          ? v.type === "block"
-            ? v
-            : { values: v }
-          : { items: v };
-        Object.assign(values, block.values || {});
-        Object.assign(partialValues, block.values || {});
+        const block = unpackValue(resolve(compileNode(n.value, getVar)));
+        Object.assign(values, block.values);
+        Object.assign(partialValues, block.values);
         partialContent.push(
-          ...(block.items || []).map((x) => ({ compiled: true, value: x }))
+          ...block.items.map((x) => ({ compiled: true, value: x }))
         );
       } else {
         partialContent.push({ compiled: false, value: n });
@@ -98,19 +100,17 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
     ) => {
       if (values.hasOwnProperty(name)) return values[name];
       if (assignItems[name]) {
-        return (values[name] = compileNode(
-          assignItems[name],
-          (n, c) =>
-            n === name &&
-            !(
-              assignItems[name].length === 1 &&
-              assignItems[name][0].type === "func"
-            )
-              ? partialValues.hasOwnProperty(n)
-                ? partialValues[n]
-                : getVar(n, c)
-              : newGetVar(n, c),
-          noTrack
+        return (values[name] = compileNode(assignItems[name], (n, c) =>
+          n === name &&
+          !(
+            assignItems[name].type === "value" &&
+            assignItems[name].values.length === 1 &&
+            assignItems[name].values[0].type === "func"
+          )
+            ? partialValues.hasOwnProperty(n)
+              ? partialValues[n]
+              : getVar(n, c)
+            : newGetVar(n, c)
         ));
       }
       const res = getVar(name, captureUndef ? false : captureUndef);
@@ -125,34 +125,40 @@ const compileBlock = ({ type, tag, items }, getVar, noTrack) => {
     for (const { key, value } of mergeItems) {
       if (!value || !getVar(key, false)) values[key] = atom();
     }
-    for (const { key, value } of mergeItems.filter((n) => n.value)) {
-      const source = compileNode(value, newGetVar, key);
-      let first = isObject(value) && value.type === "value" && value.multi;
-      const target = newGetVar(key);
-      resolve(
-        derived(() => {
-          const res = resolve(source, true);
-          if (!first) target(res);
-          first = false;
-        })
-      );
-    }
+    const merges = mergeItems
+      .filter((n) => n.value)
+      .map(({ key, value }) => {
+        {
+          const source = compileNode(value, newGetVar);
+          const target = newGetVar(key);
+          return stream(() => {
+            let first =
+              isObject(value) && value.type === "value" && value.multi;
+            return () => {
+              const res = resolve(source, true);
+              if (!first) target.set(res);
+              first = false;
+            };
+          });
+        }
+      });
 
     const content = partialContent.map((x) =>
-      x.compiled ? x.value : compileNode(x.value, newGetVar, noTrack)
+      x.compiled ? x.value : compileNode(x.value, newGetVar)
     );
 
-    if (type === "brackets") return content[content.length - 1];
-    if (type === "block") return { type: "block", tag, values, items: content };
-    if (type === "object") return values;
-    if (type === "array") return content;
-    return null;
+    return { block: constructBlock(type, tag, values, content), merges };
   };
 
   if (items.some((n) => isObject(n) && ["merge", "unpack"].includes(n.type))) {
-    return derived(result);
+    const blockStream = derived(result);
+    return derived(() => {
+      const { block, merges } = blockStream.get();
+      for (const m of merges) m.get();
+      return block;
+    });
   }
-  return result();
+  return result().block;
 };
 
 export default compileNode;

@@ -28,12 +28,14 @@ const insertSorted = (array, value) => {
 };
 class Queue {
   queue: any[] | null = null;
-  add(streams: Set<any>) {
+  trace = new Set();
+  add(streams: Set<any>, source = null as any) {
     const first = !this.queue;
     if (first) this.queue = [];
     for (const s of streams) {
       if (s.index) insertSorted(this.queue, s);
     }
+    if (source) this.trace.add(source);
     if (first) this.next();
   }
   remove(stream) {
@@ -49,6 +51,7 @@ class Queue {
       this.next();
     } else {
       this.queue = null;
+      this.trace = new Set();
     }
   }
 }
@@ -64,8 +67,10 @@ export class SourceStream {
   constructor(initial) {
     this.value = initial;
     this.set = (value) => {
-      this.value = value;
-      queue.add(this.listeners);
+      if (!queue.trace.has(this)) {
+        this.value = value;
+        queue.add(this.listeners, this);
+      }
     };
   }
 
@@ -96,7 +101,6 @@ export class Stream {
   stop;
 
   constructor(run) {
-    const obj = {};
     this.index = context.index;
     this.start = () => {
       let firstUpdate = true;
@@ -108,15 +112,11 @@ export class Stream {
       const update = run(set, (d) => disposers.push(d));
 
       let active = new Set<any>();
-      const observe = (s, sample) => {
-        s.addListener(sample ? obj : this);
+      const observe = (s) => {
+        s.addListener(this);
         active.add(s);
         return s.value;
       };
-      if (typeof update === "function") {
-        withContext([...this.index, 0], observe, update);
-      }
-      firstUpdate = false;
 
       this.update = () => {
         const prevActive = active;
@@ -125,21 +125,20 @@ export class Stream {
           withContext([...this.index, 0], observe, update);
         }
         for (const s of prevActive) {
-          if (!active.has(s)) {
-            s.removeListener(this);
-            s.removeListener(obj);
-          }
+          if (!active.has(s)) s.removeListener(this);
         }
       };
       this.stop = () => {
         queue.remove(this);
-        for (const s of active.values()) {
-          s.removeListener(this);
-          s.removeListener(obj);
-        }
+        for (const s of active.values()) s.removeListener(this);
         active = new Set();
         disposers.forEach((d) => d());
       };
+
+      if (typeof update === "function") {
+        withContext([...this.index, 0], observe, update);
+      }
+      firstUpdate = false;
     };
   }
 
@@ -154,8 +153,8 @@ export class Stream {
     }
   }
 
-  get(sample = false) {
-    return context.observe(this, sample);
+  get() {
+    return context.observe(this);
   }
 }
 

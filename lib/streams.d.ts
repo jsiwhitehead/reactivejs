@@ -20,7 +20,7 @@ export declare class Stream {
     constructor(run: any);
     addListener(x: any): void;
     removeListener(x: any): void;
-    get(sample?: boolean): any;
+    get(): any;
 }
 export declare const atom: (initial?: any) => any;
 export declare const stream: (run: any) => any;
