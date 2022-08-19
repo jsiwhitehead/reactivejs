@@ -1,11 +1,13 @@
-import { atom, derived, stream } from "./streams";
+import { atom, derived } from "./streams";
 import { resolve, isObject } from "./util";
 
-const doMember = (obj, prop) => {
+const doMember = (obj, prop, optional) => {
+  if (!obj && optional) return undefined;
   const res = obj[prop];
   return typeof res === "function" ? res.bind(obj) : res;
 };
-const doCall = (func, args) => {
+const doCall = (func, args, optional) => {
+  if (!func && optional) return undefined;
   if (func.reactiveFunc || func.name === "bound map") return func(...args);
   return func(
     ...args.map((a) => {
@@ -114,7 +116,7 @@ const compileBlock = ({ type, tag, items }, getVar) => {
         ));
       }
       const res = getVar(name, captureUndef ? false : captureUndef);
-      if (res === undefined && captureUndef) return (values[name] = atom());
+      if (res === undefined && captureUndef) return (values[name] = atom(null));
       return res;
     };
 
@@ -123,7 +125,7 @@ const compileBlock = ({ type, tag, items }, getVar) => {
 
     const mergeItems = items.filter((n) => isObject(n) && n.type === "merge");
     for (const { key, value } of mergeItems) {
-      if (!value || !getVar(key, false)) values[key] = atom();
+      if (!value || !getVar(key, false)) values[key] = atom(null);
     }
     const merges = mergeItems
       .filter((n) => n.value)
@@ -131,14 +133,9 @@ const compileBlock = ({ type, tag, items }, getVar) => {
         {
           const source = compileNode(value, newGetVar);
           const target = newGetVar(key);
-          return stream(() => {
-            let first =
-              isObject(value) && value.type === "value" && value.multi;
-            return () => {
-              const res = resolve(source, true);
-              if (!first) target.set(res);
-              first = false;
-            };
+          return derived(() => {
+            const res = resolve(source, true);
+            if (res !== undefined) target.set(res);
           });
         }
       });
@@ -154,7 +151,7 @@ const compileBlock = ({ type, tag, items }, getVar) => {
     const blockStream = derived(result);
     return derived(() => {
       const { block, merges } = blockStream.get();
-      for (const m of merges) m.get();
+      for (const mergeStream of merges) mergeStream.get();
       return block;
     });
   }

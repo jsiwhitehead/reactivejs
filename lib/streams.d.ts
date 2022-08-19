@@ -1,7 +1,7 @@
 export declare class SourceStream {
     isStream: boolean;
     listeners: Set<any>;
-    value: null;
+    value: any;
     set: any;
     constructor(initial: any);
     update(map: any): void;
@@ -22,7 +22,7 @@ export declare class Stream {
     removeListener(x: any): void;
     get(): any;
 }
-export declare const atom: (initial?: any) => any;
+export declare const atom: (initial?: any) => SourceStream;
 export declare const stream: (run: any) => any;
 export declare const derived: (map: any) => any;
 declare const _default: (func: any) => any;

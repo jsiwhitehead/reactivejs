@@ -61,7 +61,7 @@ export class SourceStream {
   isStream = true;
 
   listeners = new Set<any>();
-  value = null;
+  value;
   set;
 
   constructor(initial) {
@@ -158,7 +158,7 @@ export class Stream {
   }
 }
 
-export const atom = (initial?) => new SourceStream(initial) as any;
+export const atom = (initial?) => new SourceStream(initial);
 
 export const stream = (run) => {
   context.index = [
