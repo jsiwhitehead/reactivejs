@@ -13,34 +13,6 @@ const buildCall = (func, ...args) => ({
   arguments: args,
 });
 
-const updateNode = (node, parent, prop) => {
-  if (
-    node.type === "Identifier" &&
-    !["undefined", "null"].includes(node.name)
-  ) {
-    const value = { type: "Literal", value: node.name };
-    if (prop === "property" && !parent.computed) return value;
-    return buildCall("getValue", value);
-  }
-  if (node.type === "MemberExpression") {
-    return buildCall(
-      "doMember",
-      node.object,
-      node.property,
-      buildBoolean(node.optional)
-    );
-  }
-  if (node.type === "CallExpression") {
-    return buildCall(
-      "doCall",
-      node.callee,
-      node.arguments[0],
-      buildBoolean(node.optional)
-    );
-  }
-  return node;
-};
-
 const dontResolve = {
   Program: ["body"],
   ExpressionStatement: ["expression"],
@@ -50,7 +22,37 @@ const dontResolve = {
 };
 
 export default (code) => {
+  const vars = new Set();
   let hasResolve = false;
+
+  const updateNode = (node, parent, prop) => {
+    if (
+      node.type === "Identifier" &&
+      !["undefined", "null"].includes(node.name)
+    ) {
+      const value = { type: "Literal", value: node.name };
+      if (prop === "property" && !parent.computed) return value;
+      if (node.name[0] !== "$") vars.add(node.name);
+      return buildCall("getValue", value);
+    }
+    if (node.type === "MemberExpression") {
+      return buildCall(
+        "doMember",
+        node.object,
+        node.property,
+        buildBoolean(node.optional)
+      );
+    }
+    if (node.type === "CallExpression") {
+      return buildCall(
+        "doCall",
+        node.callee,
+        node.arguments[0],
+        buildBoolean(node.optional)
+      );
+    }
+    return node;
+  };
 
   const walkNode = (node, resolve?, parent?, prop?) => {
     if (!isObject(node) || typeof node.type !== "string") return node;
@@ -75,5 +77,5 @@ export default (code) => {
     e.expression = buildCall("resolve", e.expression, buildBoolean(true));
   }
 
-  return { code: "return " + astring.generate(tree), hasResolve };
+  return { code: "return " + astring.generate(tree), vars, hasResolve };
 };

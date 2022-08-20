@@ -65,6 +65,27 @@ const unpackValue = (v) => {
   if (Array.isArray(v)) return { values: {}, items: v };
   return { values: {}, items: [] };
 };
+const readVars = (node, getVar, ignoreBlock = false) => {
+  if (isObject(node)) {
+    if (node.type === "value") {
+      for (const name of node.vars) getVar(name);
+    } else if (
+      ["brackets", "object", "array"].includes(node.type) ||
+      (node.type === "block" && !ignoreBlock)
+    ) {
+      for (const item of node.items) {
+        if (
+          isObject(item) &&
+          ["merge", "assign", "unpack"].includes(item.type)
+        ) {
+          if (item.type !== "merge") readVars(item.value, getVar, true);
+        } else {
+          readVars(item, getVar, true);
+        }
+      }
+    }
+  }
+};
 const constructBlock = (type, tag, values, items) => {
   if (type === "brackets") return items[items.length - 1];
   if (type === "block") return { type: "block", tag, values, items };
@@ -72,15 +93,22 @@ const constructBlock = (type, tag, values, items) => {
   if (type === "array") return items;
   return null;
 };
-const compileBlock = ({ type, tag, items }, getVar) => {
+const compileBlock = (node, getVar) => {
+  const { type, tag, items } = node;
   const result = () => {
+    const assignItems = items
+      .filter((n) => isObject(n) && n.type === "assign")
+      .reduce((res, { key, value }) => ({ ...res, [key]: value }), {});
+    const contentItems = items.filter(
+      (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
+    );
+    const mergeItems = items.filter((n) => isObject(n) && n.type === "merge");
+
     const values = {};
 
     const partialValues = {};
     const partialContent = [] as any[];
-    for (const n of items.filter(
-      (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
-    )) {
+    for (const n of contentItems) {
       if (isObject(n) && n.type === "unpack") {
         const block = unpackValue(resolve(compileNode(n.value, getVar)));
         Object.assign(values, block.values);
@@ -93,9 +121,6 @@ const compileBlock = ({ type, tag, items }, getVar) => {
       }
     }
 
-    const assignItems = items
-      .filter((n) => isObject(n) && n.type === "assign")
-      .reduce((res, { key, value }) => ({ ...res, [key]: value }), {});
     const newGetVar = (
       name,
       captureUndef = type === "block" ? true : undefined
@@ -122,27 +147,29 @@ const compileBlock = ({ type, tag, items }, getVar) => {
 
     for (const name of Object.keys(assignItems)) delete values[name];
     for (const name of Object.keys(assignItems)) newGetVar(name);
-
-    const mergeItems = items.filter((n) => isObject(n) && n.type === "merge");
-    for (const { key, value } of mergeItems) {
-      if (!value || !getVar(key, false)) values[key] = atom(null);
+    for (const { key } of mergeItems.filter((n) => !n.value)) {
+      values[key] = atom(null);
     }
+    readVars(node, newGetVar);
+
+    const content = partialContent.map((x) =>
+      x.compiled ? x.value : compileNode(x.value, newGetVar)
+    );
+
     const merges = mergeItems
       .filter((n) => n.value)
       .map(({ key, value }) => {
         {
+          const target = newGetVar(key, false);
+          if (!(isObject(target) && target.isStream && target.set)) return null;
           const source = compileNode(value, newGetVar);
-          const target = newGetVar(key);
           return derived(() => {
             const res = resolve(source, true);
             if (res !== undefined) target.set(res);
           });
         }
-      });
-
-    const content = partialContent.map((x) =>
-      x.compiled ? x.value : compileNode(x.value, newGetVar)
-    );
+      })
+      .filter((x) => x);
 
     return { block: constructBlock(type, tag, values, content), merges };
   };

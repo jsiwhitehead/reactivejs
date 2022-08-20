@@ -160,7 +160,7 @@ s.addAttribute("ast", {
   btrue: (a) => ({
     type: "assign",
     key: a.ast,
-    value: { type: "value", code: "return true;" },
+    value: { type: "value", code: "return true;", vars: new Set() },
   }),
 
   bcontent: (a) => a.ast,

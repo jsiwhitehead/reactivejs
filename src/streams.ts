@@ -36,7 +36,7 @@ class Queue {
       if (s.index) insertSorted(this.queue, s);
     }
     if (source) this.trace.add(source);
-    if (first) this.next();
+    if (first) setTimeout(() => this.next());
   }
   remove(stream) {
     if (this.queue) {
