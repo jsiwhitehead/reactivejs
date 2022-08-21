@@ -59,10 +59,10 @@ const compileNode = (node, getVar) => {
 
   if (node.type === "func") {
     return reactiveFunc((...args) => {
-      const newGetVar = (name) => {
+      const newGetVar = (name, captureUndef) => {
         const index = node.args.indexOf(name);
         if (index !== -1) return args[index];
-        return getVar(name);
+        return getVar(name, captureUndef);
       };
       return compileNode(node.body, newGetVar);
     });

@@ -2,7 +2,7 @@ import compileNode from "./compile";
 import parse from "./parse";
 import run from "./streams";
 
-export { atom, derived, stream } from "./streams";
+export { atom, derived, effect, stream } from "./streams";
 export { resolve } from "./util";
 
 const compile = (source, getVar) => {

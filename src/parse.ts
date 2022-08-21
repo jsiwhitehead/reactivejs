@@ -94,7 +94,7 @@ const grammar = String.raw`Maraca {
     | name
 
   name
-    = (alnum | "-")+
+    = (alnum | "-" | "_")+
 
   string
     = "\"" (schar | escape)* "\""

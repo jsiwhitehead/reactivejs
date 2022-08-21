@@ -2,9 +2,8 @@ let context = null as any;
 const withContext = (index, observe, func) => {
   const current = context;
   context = { index, observe };
-  const result = func();
+  func();
   context = current;
-  return result;
 };
 
 const compare = (a, b) => {
@@ -170,10 +169,12 @@ export const stream = (run) => {
 
 export const derived = (map) => stream((set) => () => set(map()));
 
+export const effect = (map) => stream(() => map);
+
 let count = 0;
 export default (func) =>
   withContext([count++, 0], null, () => {
-    const stream = derived(func());
+    const stream = effect(func());
     stream.start();
     return () => stream.stop();
   });

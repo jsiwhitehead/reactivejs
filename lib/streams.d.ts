@@ -25,5 +25,6 @@ export declare class Stream {
 export declare const atom: (initial?: any) => SourceStream;
 export declare const stream: (run: any) => any;
 export declare const derived: (map: any) => any;
-declare const _default: (func: any) => any;
+export declare const effect: (map: any) => any;
+declare const _default: (func: any) => void;
 export default _default;
