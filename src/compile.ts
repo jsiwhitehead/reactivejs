@@ -1,74 +1,19 @@
+import { reactiveFunc } from "./code";
 import { atom, derived } from "./streams";
 import { resolve, isObject } from "./util";
-
-const doMember = (obj, prop, optional) => {
-  if (!obj && optional) return undefined;
-  const res = obj[prop];
-  return typeof res === "function" ? res.bind(obj) : res;
-};
-const doCall = (func, args, optional) => {
-  if (!func && optional) return undefined;
-  if (func.reactiveFunc || func.name === "bound map") return func(...args);
-  return func(
-    ...args.map((a) => {
-      const v = resolve(a, true);
-      return typeof v === "function" ? (...x) => resolve(v(...x), true) : v;
-    })
-  );
-};
-
-const compileNode = (node, getVar) => {
-  if (typeof node === "string") return node;
-
-  if (node.type === "value") {
-    const compiled = [] as any[];
-    const getValue = (name) => {
-      if (name[0] === "$") {
-        const index = parseInt(name.slice(1), 10);
-        if (!compiled[index]) {
-          compiled[index] = compileNode(node.values[index], getVar);
-        }
-        return compiled[index];
-      }
-      return getVar(name);
-    };
-
-    const func = Function(
-      `"use strict";
-      return (getValue, doMember, doCall, resolve) => {
-        ${node.code}
-      };`
-    )();
-
-    if (!node.hasResolve) return func(getValue, doMember, doCall);
-    return derived(() => func(getValue, doMember, doCall, resolve));
-  }
-
-  if (node.type === "func") {
-    const result = (...args) => {
-      const newGetVar = (name) => {
-        const index = node.args.indexOf(name);
-        if (index !== -1) return args[index];
-        return getVar(name);
-      };
-      return compileNode(node.body, newGetVar);
-    };
-    Object.assign(result, { reactiveFunc: true });
-    return result;
-  }
-
-  return compileBlock(node, getVar);
-};
 
 const unpackValue = (v) => {
   if (isObject(v)) return v.type === "block" ? v : { values: v, items: [] };
   if (Array.isArray(v)) return { values: {}, items: v };
   return { values: {}, items: [] };
 };
+
 const readVars = (node, getVar, ignoreBlock = false) => {
   if (isObject(node)) {
     if (node.type === "value") {
-      for (const name of node.vars) getVar(name);
+      for (const name of node.vars) {
+        if (name[0] !== "$") getVar(name);
+      }
     } else if (
       ["brackets", "object", "array"].includes(node.type) ||
       (node.type === "block" && !ignoreBlock)
@@ -86,6 +31,7 @@ const readVars = (node, getVar, ignoreBlock = false) => {
     }
   }
 };
+
 const constructBlock = (type, tag, values, items) => {
   if (type === "brackets") return items[items.length - 1];
   if (type === "block") return { type: "block", tag, values, items };
@@ -93,7 +39,35 @@ const constructBlock = (type, tag, values, items) => {
   if (type === "array") return items;
   return null;
 };
-const compileBlock = (node, getVar) => {
+
+const compileNode = (node, getVar) => {
+  if (typeof node === "string") return node;
+
+  if (node.type === "value") {
+    const compiled = [] as any[];
+    return node.run((name) => {
+      if (name[0] === "$") {
+        const index = parseInt(name.slice(1), 10);
+        if (!compiled[index]) {
+          compiled[index] = compileNode(node.values[index], getVar);
+        }
+        return compiled[index];
+      }
+      return getVar(name);
+    });
+  }
+
+  if (node.type === "func") {
+    return reactiveFunc((...args) => {
+      const newGetVar = (name) => {
+        const index = node.args.indexOf(name);
+        if (index !== -1) return args[index];
+        return getVar(name);
+      };
+      return compileNode(node.body, newGetVar);
+    });
+  }
+
   const { type, tag, items } = node;
   const result = () => {
     const assignItems = items

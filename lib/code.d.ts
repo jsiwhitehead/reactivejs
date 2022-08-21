@@ -1,6 +1,6 @@
+export declare const reactiveFunc: (func: any) => any;
 declare const _default: (code: any) => {
-    code: string;
-    vars: Set<unknown>;
-    hasResolve: boolean;
+    vars: unknown[];
+    run: (getValue: any) => any;
 };
 export default _default;

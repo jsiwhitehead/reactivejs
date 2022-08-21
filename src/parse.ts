@@ -1,6 +1,6 @@
 import ohm from "ohm-js";
 
-import updateCode from "./code";
+import compileCode from "./code";
 
 const grammar = String.raw`Maraca {
 
@@ -160,7 +160,7 @@ s.addAttribute("ast", {
   btrue: (a) => ({
     type: "assign",
     key: a.ast,
-    value: { type: "value", code: "return true;", vars: new Set() },
+    value: { type: "value", run: () => true, vars: [] },
   }),
 
   bcontent: (a) => a.ast,
@@ -183,7 +183,7 @@ s.addAttribute("ast", {
         ["brackets", "array"].includes(ast[i].type)
       ) {
         if (ast[i].type === "brackets") {
-          result.push("(", { ...ast[i], type: "array" }, ")");
+          result.push("(...", { ...ast[i], type: "array" }, ")");
         } else {
           result.push("[", ast[i].items[0], "]");
         }
@@ -191,12 +191,11 @@ s.addAttribute("ast", {
         result.push(ast[i]);
       }
     }
-
     const values = [] as any[];
     const code = result
       .map((v) => (typeof v === "string" ? v : `$${values.push(v) - 1}`))
       .join("");
-    return { type: "value", values, ...updateCode(code) };
+    return { type: "value", values, ...compileCode(code) };
   },
 
   vchunk: (a) => a.sourceString,

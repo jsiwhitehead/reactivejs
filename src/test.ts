@@ -18,6 +18,6 @@ setInterval(() => {
   tick.update((x) => x + 1);
 }, 1000);
 
-run({ tick }, `{ x:: [...x, tick] }`, (data) => {
+run({ tick }, `( f: x=> x + 1, f(tick) )`, (data) => {
   console.log(print(resolve(data, true)));
 });
