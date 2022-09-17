@@ -178,7 +178,7 @@ s.addAttribute("ast", {
     const result = [ast[0]];
     for (let i = 1; i < ast.length; i++) {
       if (
-        (typeof ast[i - 1] !== "string" || /\S$/.test(ast[i - 1])) &&
+        (typeof ast[i - 1] !== "string" || /[^\s!-]$/.test(ast[i - 1])) &&
         typeof ast[i] === "object" &&
         ["brackets", "array"].includes(ast[i].type)
       ) {

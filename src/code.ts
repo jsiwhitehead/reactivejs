@@ -26,11 +26,19 @@ const dontResolve = {
 const doMember = (obj, optional, prop) => {
   if (!obj && optional) return undefined;
   const res = obj[prop];
-  return typeof res === "function" ? res.bind(obj) : res;
+  if (typeof res !== "function") return res;
+  return res.bind(
+    Array.isArray(obj) && ["join"].includes(prop) ? resolve(obj, true) : obj
+  );
 };
 const doCall = (func, optional, ...args) => {
   if (!func && optional) return undefined;
-  if (func.reactiveFunc || func.name === "bound map") return func(...args);
+  if (
+    func.reactiveFunc ||
+    ["bound forEach", "bound map", "bound reduce"].includes(func.name)
+  ) {
+    return func(...args);
+  }
   return func(
     ...args.map((a) => {
       const v = resolve(a, true);
