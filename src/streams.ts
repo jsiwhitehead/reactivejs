@@ -45,7 +45,7 @@ class Queue {
   }
   next() {
     if (this.queue && this.queue.length > 0) {
-      const next = this.queue.shift();
+      const next = this.queue.pop();
       next.update();
       this.next();
     } else {
@@ -114,6 +114,11 @@ export class Stream {
       const observe = (s) => {
         s.addListener(this);
         active.add(s);
+        const i = queue.queue?.indexOf(s) || -1;
+        if (i !== -1) {
+          s.update();
+          queue.queue!.splice(i, 1);
+        }
         return s.value;
       };
 
