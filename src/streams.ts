@@ -1,185 +1,159 @@
-let context = null as any;
-const withContext = (index, observe, func) => {
-  const current = context;
-  context = { index, observe };
-  func();
-  context = current;
+const DEBUG = false;
+let debugIndex = 0;
+
+let current;
+const withCurrent = (s, func) => {
+  const prev = current;
+  current = s;
+  const result = func();
+  current = prev;
+  return result;
 };
 
-const compare = (a, b) => {
-  const l = Math.max(a.length, b.length);
-  for (let i = 0; i < l; i++) {
-    if (a[i] === undefined) return 1;
-    if (b[i] === undefined) return -1;
-    if (a[i] !== b[i]) return a[i] - b[i];
+const sourceUpdated = new Set<any>();
+const effectTraced = new Set<any>();
+const queue = new Set<any>();
+const runNext = () => {
+  if (queue.size > 0) {
+    const queueArray = [...queue];
+    if (DEBUG) {
+      console.log(
+        `Queue: ${queueArray
+          .map((q) => `${q.index}: ${q.debug} = ${q.traceCount}`)
+          .join(", ")}`
+      );
+    }
+    const maxCount = Math.max(...queueArray.map((q) => q.traceCount));
+    const next = queueArray.find((q) => q.traceCount === maxCount);
+    queue.delete(next);
+    next.update();
+    runNext();
+  } else {
+    sourceUpdated.clear();
+    for (const s of effectTraced) s.traceCount = 0;
+    effectTraced.clear();
   }
-  return 0;
 };
-const insertSorted = (array, value) => {
-  let low = 0;
-  let high = array.length;
-  while (low < high) {
-    const mid = (low + high) >>> 1;
-    if (compare(array[mid].index, value.index) < 0) low = mid + 1;
-    else high = mid;
-  }
-  if (array[low] !== value) array.splice(low, 0, value);
-};
-class Queue {
-  queue: any[] | null = null;
-  trace = new Set();
-  add(streams: Set<any>, source = null as any) {
-    const first = !this.queue;
-    if (first) this.queue = [];
-    for (const s of streams) {
-      if (s.index) insertSorted(this.queue, s);
-    }
-    if (source) this.trace.add(source);
-    if (first) setTimeout(() => this.next());
-  }
-  remove(stream) {
-    if (this.queue) {
-      const i = this.queue.indexOf(stream);
-      if (i !== -1) this.queue.splice(i, 1);
-    }
-  }
-  next() {
-    if (this.queue && this.queue.length > 0) {
-      const next = this.queue.pop();
-      next.update();
-      this.next();
-    } else {
-      this.queue = null;
-      this.trace = new Set();
-    }
-  }
-}
-const queue = new Queue();
 
-export class SourceStream {
+class SourceStream {
   isStream = true;
 
-  listeners = new Set<any>();
   value;
-  set;
 
-  constructor(initial) {
-    this.value = initial;
-    this.set = (value) => {
-      if (!queue.trace.has(this)) {
-        this.value = value;
-        queue.add(this.listeners, this);
-      }
-    };
+  observedBy = new Set<any>();
+
+  constructor(value) {
+    this.value = value;
   }
 
+  set(value) {
+    if (!sourceUpdated.has(this)) {
+      const first = sourceUpdated.size === 0;
+      sourceUpdated.add(this);
+      this.value = value;
+      for (const s of this.observedBy) s.stale();
+      if (first) runNext();
+    }
+  }
   update(map) {
     this.set(map(this.value));
   }
 
-  addListener(x) {
-    this.listeners.add(x);
-  }
-  removeListener(x) {
-    if (this.listeners.has(x)) this.listeners.delete(x);
-  }
-
   get() {
-    return context.observe(this);
+    this.observedBy.add(current);
+    current.observing.add(this);
+    return this.value;
+  }
+  stopGet(s) {
+    this.observedBy.delete(s);
   }
 }
 
-export class Stream {
+class Stream {
   isStream = true;
+  index = DEBUG && debugIndex++;
 
-  listeners = new Set<any>();
-  index;
-  value = null;
-  start;
-  update;
-  stop;
+  run;
+  isEffect;
+  debug;
 
-  constructor(run) {
-    this.index = context.index;
-    this.start = () => {
-      let firstUpdate = true;
-      const disposers = [] as any[];
-      const set = (value) => {
-        this.value = value;
-        if (!firstUpdate) queue.add(this.listeners);
-      };
-      const update = run(set, (d) => disposers.push(d));
+  state = "stale";
+  traceCount = 0;
+  value;
 
-      let active = new Set<any>();
-      const observe = (s) => {
-        s.addListener(this);
-        active.add(s);
-        const i = queue.queue?.indexOf(s) || -1;
-        if (i !== -1) {
-          s.update();
-          queue.queue!.splice(i, 1);
-        }
-        return s.value;
-      };
+  observedBy = new Set<any>();
+  observing = new Set<any>();
 
-      this.update = () => {
-        const prevActive = active;
-        active = new Set();
-        if (typeof update === "function") {
-          withContext([...this.index, 0], observe, update);
-        }
-        for (const s of prevActive) {
-          if (!active.has(s)) s.removeListener(this);
-        }
-      };
-      this.stop = () => {
-        queue.remove(this);
-        for (const s of active.values()) s.removeListener(this);
-        active = new Set();
-        disposers.forEach((d) => d());
-      };
-
-      if (typeof update === "function") {
-        withContext([...this.index, 0], observe, update);
-      }
-      firstUpdate = false;
-    };
+  constructor(run, isEffect, debug) {
+    this.run = run;
+    this.isEffect = isEffect;
+    this.debug = debug;
   }
 
-  addListener(x) {
-    if (this.listeners.size === 0) this.start();
-    this.listeners.add(x);
+  stale() {
+    if (DEBUG) console.log(`Stale:\t${this.index}: ${this.debug}`);
+    this.state = "stale";
+    if (this.isEffect) {
+      queue.add(this);
+      for (const s of this.observedBy) s.trace();
+    } else {
+      for (const s of this.observedBy) s.stale();
+    }
   }
-  removeListener(x) {
-    if (this.listeners.has(x)) {
-      this.listeners.delete(x);
-      if (this.listeners.size === 0) this.stop();
+  trace() {
+    if (this.isEffect) {
+      if (DEBUG) console.log(`Trace:\t${this.index}: ${this.debug}`);
+      this.traceCount++;
+      effectTraced.add(this);
+    }
+    for (const s of this.observedBy) s.trace();
+  }
+  update() {
+    if (DEBUG) console.log(`Update:\t${this.index}: ${this.debug}`);
+    this.state = "stable";
+    const prevObserving = this.observing;
+    this.observing = new Set();
+    this.value = withCurrent(this, this.run);
+    for (const s of prevObserving) {
+      if (!this.observing.has(s)) s.stopGet(this);
     }
   }
 
   get() {
-    return context.observe(this);
+    if (DEBUG) console.log(`Get:\t${this.index}: ${this.debug}`);
+    this.observedBy.add(current);
+    current.observing.add(this);
+    if (this.state === "stale") this.update();
+    if (DEBUG) {
+      console.log(
+        `Read:\t${this.index}: ${this.debug}, ${JSON.stringify(
+          this.value,
+          (_, x) => (x?.isStream ? "stream: " + x.index : x)
+        )}`
+      );
+    }
+    return this.value;
+  }
+  stopGet(s) {
+    this.observedBy.delete(s);
+    if (this.observedBy.size === 0) {
+      if (DEBUG) console.log(`Stop:\t${this.index}: ${this.debug}`);
+      this.state = "stale";
+      this.traceCount = 0;
+      queue.delete(this);
+      for (const s of this.observing) s.stopGet(this);
+      this.observing = new Set();
+    }
   }
 }
 
 export const atom = (initial?) => new SourceStream(initial);
 
-export const stream = (run) => {
-  context.index = [
-    ...context.index.slice(0, -1),
-    context.index[context.index.length - 1] + 1,
-  ];
-  return new Stream(run) as any;
+export const derived = (run, debug = "") => new Stream(run, false, debug);
+
+export const effect = (run, debug = "") => new Stream(run, true, debug);
+
+export default (run) => {
+  queue.add(effect(run, "run"));
+  runNext();
 };
-
-export const derived = (map) => stream((set) => () => set(map()));
-
-export const effect = (map) => stream(() => map);
-
-let count = 0;
-export default (func) =>
-  withContext([count++, 0], null, () => {
-    const stream = effect(func());
-    stream.start();
-    return () => stream.stop();
-  });

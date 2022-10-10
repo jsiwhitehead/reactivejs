@@ -1,5 +1,5 @@
 import { reactiveFunc } from "./code";
-import { atom, derived } from "./streams";
+import { atom, derived, effect } from "./streams";
 import { resolve, isObject } from "./util";
 
 const unpackValue = (v) => {
@@ -137,10 +137,10 @@ const compileNode = (node, getVar) => {
           const target = newGetVar(key, false);
           if (!(isObject(target) && target.isStream && target.set)) return null;
           const source = compileNode(value, newGetVar);
-          return derived(() => {
+          return effect(() => {
             const res = resolve(source, true);
             if (res !== undefined) target.set(res);
-          });
+          }, `merge ${key}`);
         }
       })
       .filter((x) => x);
@@ -149,12 +149,12 @@ const compileNode = (node, getVar) => {
   };
 
   if (items.some((n) => isObject(n) && ["merge", "unpack"].includes(n.type))) {
-    const blockStream = derived(result);
+    const blockStream = derived(result, "block parts");
     return derived(() => {
       const { block, merges } = blockStream.get();
       for (const mergeStream of merges) mergeStream.get();
       return block;
-    });
+    }, "block");
   }
   return result().block;
 };

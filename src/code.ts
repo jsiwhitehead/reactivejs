@@ -33,11 +33,19 @@ const doMember = (obj, optional, prop) => {
 };
 const doCall = (func, optional, ...args) => {
   if (!func && optional) return undefined;
-  if (
-    func.reactiveFunc ||
-    ["bound forEach", "bound map", "bound reduce"].includes(func.name)
-  ) {
+  if (func.reactiveFunc) {
     return func(...args);
+  }
+  if (["bound map", "bound reduce"].includes(func.name)) {
+    return func(...args.map((a, i) => (i === 0 ? resolve(a) : a)));
+  }
+  if (["bound flatMap"].includes(func.name)) {
+    return func(
+      ...args.map((a) => {
+        const v = resolve(a);
+        return typeof v === "function" ? (...x) => resolve(v(...x)) : v;
+      })
+    );
   }
   return func(
     ...args.map((a) => {
@@ -98,10 +106,11 @@ export default (code) => {
   };
 
   const ast = walkNode(acorn.parse(code, { ecmaVersion: 2022 }));
+  const newCode = astring.generate(ast);
   const func = Function(
     `"use strict";
     return (getValue, doMember, doCall, resolve) => {
-      return ${astring.generate(ast)}
+      return ${newCode}
     };`
   )();
 
@@ -109,7 +118,7 @@ export default (code) => {
     vars: [...vars],
     run: (getValue) => {
       if (!hasResolve) return func(getValue, doMember, doCall);
-      return derived(() => func(getValue, doMember, doCall, resolve));
+      return derived(() => func(getValue, doMember, doCall, resolve), code);
     },
   };
 };

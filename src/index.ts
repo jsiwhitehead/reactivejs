@@ -2,7 +2,7 @@ import compileNode from "./compile";
 import parse from "./parse";
 import run from "./streams";
 
-export { atom, derived, effect, stream } from "./streams";
+export { atom, derived, effect } from "./streams";
 export { resolve } from "./util";
 
 const compile = (source, getVar) => {
@@ -18,10 +18,8 @@ const compile = (source, getVar) => {
 };
 
 export default (library, source, update) => {
+  const compiled = compile(source, (name) => library[name]);
   run(() => {
-    const compiled = compile(source, (name) => library[name]);
-    return () => {
-      update(compiled);
-    };
+    update(compiled);
   });
 };
