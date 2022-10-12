@@ -27,9 +27,27 @@ const doMember = (obj, optional, prop) => {
   if (!obj && optional) return undefined;
   const res = obj[prop];
   if (typeof res !== "function") return res;
-  return res.bind(
-    Array.isArray(obj) && ["join"].includes(prop) ? resolve(obj, true) : obj
-  );
+  if (Array.isArray(obj)) {
+    if (["join", "includes", "indexOf", "lastIndexOf"].includes(prop)) {
+      return res.bind(resolve(obj, true));
+    }
+    if (
+      [
+        "copyWithin",
+        "fill",
+        "pop",
+        "push",
+        "reverse",
+        "shift",
+        "sort",
+        "splice",
+        "unshift",
+      ].includes(prop)
+    ) {
+      return res.bind([...obj]);
+    }
+  }
+  return res.bind(obj);
 };
 const doCall = (func, optional, ...args) => {
   if (!func && optional) return undefined;
@@ -39,7 +57,7 @@ const doCall = (func, optional, ...args) => {
   if (["bound map", "bound reduce"].includes(func.name)) {
     return func(...args.map((a, i) => (i === 0 ? resolve(a) : a)));
   }
-  if (["bound flatMap"].includes(func.name)) {
+  if (["bound flatMap", "bound sort"].includes(func.name)) {
     return func(
       ...args.map((a) => {
         const v = resolve(a);
