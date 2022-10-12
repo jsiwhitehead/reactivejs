@@ -74,11 +74,12 @@ const grammar = String.raw`Maraca {
     = ~("<" | "{") any
 
   value
-    = (function| functionsingle | vchunk | xstring | ystring | brackets | object | array | plainblock | block<name> | plainblockclosed | blockclosed<name>)+
+    = (function| functionsingle | vchunk | xstring | ystring | template | brackets | object | array | plainblock | block<name> | plainblockclosed | blockclosed<name>)+
 
-  vchunk = vchar+
+  vchunk
+    = vchar+
 
-  vchar = ~("(" | ")" | "{" | "}" | "[" | "]" | "," | "=>" | open | "<\\" | "/>" | "\"" | "'") any
+  vchar = ~("(" | ")" | "{" | "}" | "[" | "]" | "," | "=>" | open | "<\\" | "/>" | "\"" | "'" | "${"`"}") any
 
   xstring
     = "\"" (xchar | escape)* "\""
@@ -91,6 +92,18 @@ const grammar = String.raw`Maraca {
 
   ychar
     = ~("'" | "\\") any
+
+  template
+    = "${"`"}" (tchunk | tvalue)* "${"`"}"
+
+  tvalue
+    = "${"${"}" value "}"
+
+  tchunk
+    = (tchar | escape)+
+
+  tchar
+    = ~("${"`"}" | "\\" | "${"${"}") any
 
   open
     = "<" name
@@ -225,6 +238,20 @@ s.addAttribute("ast", {
   ystring: (_1, a, _2) => `'${a.sourceString}'`,
 
   ychar: (_) => null,
+
+  template: (_1, a, _2) => {
+    const values = [] as any[];
+    const code = `\`${a.ast
+      .map((v) => (typeof v === "string" ? v : `\${$${values.push(v) - 1}}`))
+      .join("")}\``;
+    return { type: "value", values, ...compileCode(code) };
+  },
+
+  tvalue: (_1, a, _2) => a.ast,
+
+  tchunk: (a) => a.sourceString,
+
+  tchar: (_) => null,
 
   open: (_1, a) => a.ast,
 
