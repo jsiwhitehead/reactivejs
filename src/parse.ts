@@ -37,11 +37,17 @@ const grammar = String.raw`Maraca {
   unpack
     = "..." space* value
 
+  plainblock
+    = "<\\" space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* ">" bcontent* "</>"
+
   block<tag>
-    = "<" tag space* listOf<(bmerge | bassign | btrue | bunpack | bvalue | block<name> | blockclosed<name> | string), space+> space* ">" bcontent* "</" tag ">"
+    = "<" tag space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* ">" bcontent* "</" tag ">"
+
+  plainblockclosed
+    = "<\\" space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* "/>"
 
   blockclosed<tag>
-    = "<" tag space* listOf<(bmerge | bassign | btrue | bunpack | bvalue | block<name> | blockclosed<name> | string), space+> space* "/>"
+    = "<" tag space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* "/>"
 
   bmerge
     = key "::" (bvalue | string)?
@@ -53,7 +59,7 @@ const grammar = String.raw`Maraca {
     = name
 
   bcontent
-    = (bchunk | bunpack | bvalue | block<name> | blockclosed<name>)
+    = (bchunk | bunpack | bvalue | plainblock | block<name> | plainblockclosed | blockclosed<name>)
 
   bunpack
     = "{" "..." value "}"
@@ -68,23 +74,23 @@ const grammar = String.raw`Maraca {
     = ~("<" | "{") any
 
   value
-    = (function| functionsingle | vchunk | xstring | ystring | brackets | object | array | block<name> | blockclosed<name>)+
+    = (function| functionsingle | vchunk | xstring | ystring | brackets | object | array | plainblock | block<name> | plainblockclosed | blockclosed<name>)+
 
   vchunk = vchar+
 
-  vchar = ~("(" | ")" | "{" | "}" | "[" | "]" | "," | "=>" | open | "/>" | "\"" | "'") any
+  vchar = ~("(" | ")" | "{" | "}" | "[" | "]" | "," | "=>" | open | "<\\" | "/>" | "\"" | "'") any
 
   xstring
-  = "\"" (xchar | escape)* "\""
+    = "\"" (xchar | escape)* "\""
 
   xchar
-  = ~("\"" | "\\") any
+    = ~("\"" | "\\") any
 
   ystring
-  = "'" (ychar | escape)* "'"
+    = "'" (ychar | escape)* "'"
 
   ychar
-  = ~("'" | "\\") any
+    = ~("'" | "\\") any
 
   open
     = "<" name
@@ -141,10 +147,20 @@ s.addAttribute("ast", {
 
   unpack: (_1, _2, a) => ({ type: "unpack", value: a.ast }),
 
+  plainblock: (_1, _2, a, _3, _4, b, _5) => ({
+    type: "block",
+    items: [...a.ast, ...b.ast],
+  }),
+
   block: (_1, a, _2, b, _3, _4, c, _5, _6, _7) => ({
     type: "block",
     tag: a.ast,
     items: [...b.ast, ...c.ast],
+  }),
+
+  plainblockclosed: (_1, _2, a, _3, _4) => ({
+    type: "block",
+    items: a.ast,
   }),
 
   blockclosed: (_1, a, _2, b, _3, _4) => ({
