@@ -57,7 +57,6 @@ const doCall = (func, optional, ...args) => {
 
 export default (code) => {
   const vars = new Set();
-  let hasResolve = false;
 
   const updateNode = (node, parent, prop) => {
     if (
@@ -98,10 +97,7 @@ export default (code) => {
     });
     const updated = updateNode(walked, parent, prop);
 
-    if (doResolve && updated !== walked) {
-      hasResolve = true;
-      return buildCall("resolve", updated);
-    }
+    if (doResolve && updated !== walked) return buildCall("resolve", updated);
     return updated;
   };
 
@@ -116,9 +112,7 @@ export default (code) => {
 
   return {
     vars: [...vars],
-    run: (getValue) => {
-      if (!hasResolve) return func(getValue, doMember, doCall);
-      return derived(() => func(getValue, doMember, doCall, resolve), code);
-    },
+    run: (getValue) =>
+      derived(() => func(getValue, doMember, doCall, resolve), code) as any,
   };
 };

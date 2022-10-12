@@ -11,9 +11,8 @@ const unpackValue = (v) => {
 const readVars = (node, getVar, ignoreBlock = false) => {
   if (isObject(node)) {
     if (node.type === "value") {
-      for (const name of node.vars) {
-        if (name[0] !== "$") getVar(name);
-      }
+      for (const name of node.vars.filter((n) => n[0] !== "$")) getVar(name);
+      for (const v of node.values) readVars(v, getVar, true);
     } else if (
       ["brackets", "object", "array"].includes(node.type) ||
       (node.type === "block" && !ignoreBlock)
@@ -30,14 +29,6 @@ const readVars = (node, getVar, ignoreBlock = false) => {
       }
     }
   }
-};
-
-const constructBlock = (type, tag, values, items) => {
-  if (type === "brackets") return items[items.length - 1];
-  if (type === "block") return { type: "block", tag, values, items };
-  if (type === "object") return values;
-  if (type === "array") return items;
-  return null;
 };
 
 const compileNode = (node, getVar) => {
@@ -69,7 +60,7 @@ const compileNode = (node, getVar) => {
   }
 
   const { type, tag, items } = node;
-  const result = () => {
+  return derived(() => {
     const assignItems = items
       .filter((n) => isObject(n) && n.type === "assign")
       .reduce((res, { key, value }) => ({ ...res, [key]: value }), {});
@@ -130,33 +121,23 @@ const compileNode = (node, getVar) => {
       x.compiled ? x.value : compileNode(x.value, newGetVar)
     );
 
-    const merges = mergeItems
-      .filter((n) => n.value)
-      .map(({ key, value }) => {
-        {
-          const target = newGetVar(key, false);
-          if (!(isObject(target) && target.isStream && target.set)) return null;
-          const source = compileNode(value, newGetVar);
-          return effect(() => {
-            const res = resolve(source, true);
-            if (res !== undefined) target.set(res);
-          }, `merge ${key}`);
-        }
-      })
-      .filter((x) => x);
+    for (const { key, value } of mergeItems.filter((n) => n.value)) {
+      const target = newGetVar(key, false);
+      if (isObject(target) && target.isStream && target.set) {
+        const source = compileNode(value, newGetVar);
+        effect(() => {
+          const res = resolve(source, true);
+          if (res !== undefined) target.set(res);
+        }, `merge ${key}`);
+      }
+    }
 
-    return { block: constructBlock(type, tag, values, content), merges };
-  };
-
-  if (items.some((n) => isObject(n) && ["merge", "unpack"].includes(n.type))) {
-    const blockStream = derived(result, "block parts");
-    return derived(() => {
-      const { block, merges } = blockStream.get();
-      for (const mergeStream of merges) mergeStream.get();
-      return block;
-    }, "block");
-  }
-  return result().block;
+    if (type === "brackets") return content[content.length - 1];
+    if (type === "block") return { type: "block", tag, values, items: content };
+    if (type === "object") return values;
+    if (type === "array") return content;
+    return null;
+  }, "block");
 };
 
 export default compileNode;

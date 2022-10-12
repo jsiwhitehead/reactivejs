@@ -121,9 +121,11 @@ class Stream {
 
   get() {
     if (DEBUG) console.log(`Get:\t${this.index}: ${this.debug}`);
-    this.observedBy.add(current);
-    current.observing.add(this);
     if (this.state === "stale") this.update();
+    if (this.observing.size > 0) {
+      current.observing.add(this);
+      this.observedBy.add(current);
+    }
     if (DEBUG) {
       console.log(
         `Read:\t${this.index}: ${this.debug}, ${JSON.stringify(
@@ -151,9 +153,9 @@ export const atom = (initial?) => new SourceStream(initial);
 
 export const derived = (run, debug = "") => new Stream(run, false, debug);
 
-export const effect = (run, debug = "") => new Stream(run, true, debug);
+export const effect = (run, debug = "") => new Stream(run, true, debug).get();
 
 export default (run) => {
-  queue.add(effect(run, "run"));
+  queue.add(new Stream(run, true, "run"));
   runNext();
 };

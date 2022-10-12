@@ -28,6 +28,6 @@ declare class Stream {
 }
 export declare const atom: (initial?: any) => SourceStream;
 export declare const derived: (run: any, debug?: string) => Stream;
-export declare const effect: (run: any, debug?: string) => Stream;
+export declare const effect: (run: any, debug?: string) => any;
 declare const _default: (run: any) => void;
 export default _default;
