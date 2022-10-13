@@ -123,7 +123,7 @@ const compileNode = (node, getVar) => {
 
     for (const name of Object.keys(assignItems)) delete values[name];
     for (const name of Object.keys(assignItems)) newGetVar(name);
-    for (const { key } of mergeItems.filter((n) => !n.value)) {
+    for (const { key } of mergeItems.filter((n) => n.source)) {
       values[key] = atom(null);
     }
     readVars(node, newGetVar);
