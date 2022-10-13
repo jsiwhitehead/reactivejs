@@ -75,12 +75,23 @@ const compileNode = (node, getVar) => {
     const partialContent = [] as any[];
     for (const n of contentItems) {
       if (isObject(n) && n.type === "unpack") {
-        const block = unpackValue(resolve(compileNode(n.value, getVar)));
-        Object.assign(values, block.values);
-        Object.assign(partialValues, block.values);
-        partialContent.push(
-          ...block.items.map((x) => ({ compiled: true, value: x }))
-        );
+        const value = resolve(compileNode(n.value, getVar));
+        if (isObject(value)) {
+          if (value.type === "block" && type === "block") {
+            Object.assign(values, value.values);
+            Object.assign(partialValues, value.values);
+            partialContent.push(
+              ...value.items.map((x) => ({ compiled: true, value: x }))
+            );
+          } else {
+            Object.assign(values, value);
+            Object.assign(partialValues, value);
+          }
+        } else if (Array.isArray(value)) {
+          partialContent.push(
+            ...value.map((x) => ({ compiled: true, value: x }))
+          );
+        }
       } else {
         partialContent.push({ compiled: false, value: n });
       }
