@@ -29,10 +29,10 @@ const grammar = String.raw`Maraca {
     = space* "," space*
 
   merge
-    = "~"? space* name space* "::" space* value?
+    = "~"? space* name space* "::" space* value
 
   assign
-    = "*"? space* key space* ":" space* value
+    = ("*" | "&")? space* key space* ":" space* value
 
   unpack
     = "..." space* value
@@ -50,10 +50,10 @@ const grammar = String.raw`Maraca {
     = "<" tag space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* "/>"
 
   bmerge
-    = "~"? key "::" (bvalue | string)?
+    = "~"? key "::" (bvalue | string)
 
   bassign
-    = "*"? key "=" (bvalue | string)
+    = ("*" | "&")? key "=" (bvalue | string)
 
   btrue
     = name
@@ -156,14 +156,15 @@ s.addAttribute("ast", {
 
   merge: (a, _1, b, _2, _3, _4, c) => ({
     type: "merge",
-    source: a.ast.length === 1,
+    source: a.sourceString === "~",
     key: b.ast,
-    value: c.ast[0],
+    value: c.ast,
   }),
 
   assign: (a, _1, b, _2, _3, _4, c) => ({
     type: "assign",
-    recursive: a.ast.length === 1,
+    recursive: a.sourceString === "*",
+    root: a.sourceString === "&",
     key: b.ast,
     value: c.ast,
   }),
@@ -194,14 +195,15 @@ s.addAttribute("ast", {
 
   bmerge: (a, b, _1, c) => ({
     type: "merge",
-    source: a.ast.length === 1,
+    source: a.sourceString === "~",
     key: b.ast,
-    value: c.ast[0],
+    value: c.ast,
   }),
 
   bassign: (a, b, _1, c) => ({
     type: "assign",
-    recursive: a.ast.length === 1,
+    recursive: a.sourceString === "*",
+    root: a.sourceString === "&",
     key: b.ast,
     value: c.ast,
   }),
@@ -290,7 +292,6 @@ s.addAttribute("ast", {
   emptyListOf: () => [],
 
   _iter: (...children) => children.map((c) => c.ast),
-  _terminal: () => null,
 });
 
 export default (script) => {

@@ -2,10 +2,10 @@ import { reactiveFunc } from "./code";
 import { atom, derived, effect } from "./streams";
 import { resolve, isObject } from "./util";
 
-const unpackValue = (v) => {
-  if (isObject(v)) return v.type === "block" ? v : { values: v, items: [] };
-  if (Array.isArray(v)) return { values: {}, items: v };
-  return { values: {}, items: [] };
+const resolveSource = (x) => {
+  if (isObject(x) && x.isStream && x.set) return x;
+  if (isObject(x) && x.isStream) return resolveSource(x.get());
+  return x;
 };
 
 const readVars = (node, getVar, ignoreBlock = false) => {
@@ -17,12 +17,9 @@ const readVars = (node, getVar, ignoreBlock = false) => {
       ["brackets", "object", "array"].includes(node.type) ||
       (node.type === "block" && !ignoreBlock)
     ) {
-      for (const item of node.items) {
-        if (
-          isObject(item) &&
-          ["merge", "assign", "unpack"].includes(item.type)
-        ) {
-          if (item.type !== "merge") readVars(item.value, getVar, true);
+      for (const item of node.items.filter((n) => isObject(n))) {
+        if (["merge", "assign", "unpack"].includes(item.type)) {
+          readVars(item.value, getVar, true);
         } else {
           readVars(item, getVar, true);
         }
@@ -62,7 +59,7 @@ const compileNode = (node, getVar) => {
   const { type, tag, items } = node;
   return derived(() => {
     const assignItems = items
-      .filter((n) => isObject(n) && n.type === "assign")
+      .filter((n) => isObject(n) && n.type === "assign" && !n.root)
       .reduce(
         (res, { recursive, key, value }) => ({
           ...res,
@@ -129,12 +126,22 @@ const compileNode = (node, getVar) => {
     }
     readVars(node, newGetVar);
 
+    const root = items
+      .filter((n) => isObject(n) && n.type === "assign" && n.root)
+      .reduce(
+        (res, { key, value }) => ({
+          ...res,
+          [key]: compileNode(value, newGetVar),
+        }),
+        {}
+      );
+
     const content = partialContent.map((x) =>
       x.compiled ? x.value : compileNode(x.value, newGetVar)
     );
 
     for (const { key, value } of mergeItems.filter((n) => n.value)) {
-      const target = newGetVar(key, false);
+      const target = resolveSource(newGetVar(key, false));
       if (isObject(target) && target.isStream && target.set) {
         const source = compileNode(value, newGetVar);
         effect(() => {
@@ -144,10 +151,18 @@ const compileNode = (node, getVar) => {
       }
     }
 
-    if (type === "brackets") return content[content.length - 1];
-    if (type === "block") return { type: "block", tag, values, items: content };
+    if (type === "block") {
+      return {
+        type: "block",
+        ...(tag ? { tag } : {}),
+        values,
+        items: content,
+        ...root,
+      };
+    }
     if (type === "object") return values;
     if (type === "array") return content;
+    if (type === "brackets") return content[content.length - 1];
     return null;
   }, "block");
 };
