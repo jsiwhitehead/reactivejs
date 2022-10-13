@@ -63,7 +63,13 @@ const compileNode = (node, getVar) => {
   return derived(() => {
     const assignItems = items
       .filter((n) => isObject(n) && n.type === "assign")
-      .reduce((res, { key, value }) => ({ ...res, [key]: value }), {});
+      .reduce(
+        (res, { recursive, key, value }) => ({
+          ...res,
+          [key]: { recursive, value },
+        }),
+        {}
+      );
     const contentItems = items.filter(
       (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
     );
@@ -103,17 +109,12 @@ const compileNode = (node, getVar) => {
     ) => {
       if (values.hasOwnProperty(name)) return values[name];
       if (assignItems[name]) {
-        return (values[name] = compileNode(assignItems[name], (n, c) =>
-          n === name &&
-          !(
-            assignItems[name].type === "value" &&
-            assignItems[name].values.length === 1 &&
-            assignItems[name].values[0].type === "func"
-          )
-            ? partialValues.hasOwnProperty(n)
-              ? partialValues[n]
-              : getVar(n, c)
-            : newGetVar(n, c)
+        return (values[name] = compileNode(assignItems[name].value, (n, c) =>
+          n !== name || assignItems[name].recursive
+            ? newGetVar(n, c)
+            : partialValues.hasOwnProperty(n)
+            ? partialValues[n]
+            : getVar(n, c)
         ));
       }
       const res = getVar(name, captureUndef ? false : captureUndef);

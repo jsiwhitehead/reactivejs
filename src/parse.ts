@@ -32,7 +32,7 @@ const grammar = String.raw`Maraca {
     = "~"? space* name space* "::" space* value?
 
   assign
-    = key space* ":" space* value
+    = "*"? space* key space* ":" space* value
 
   unpack
     = "..." space* value
@@ -53,7 +53,7 @@ const grammar = String.raw`Maraca {
     = "~"? key "::" (bvalue | string)?
 
   bassign
-    = key "=" (bvalue | string)
+    = "*"? key "=" (bvalue | string)
 
   btrue
     = name
@@ -161,7 +161,12 @@ s.addAttribute("ast", {
     value: c.ast[0],
   }),
 
-  assign: (a, _1, _2, _3, b) => ({ type: "assign", key: a.ast, value: b.ast }),
+  assign: (a, _1, b, _2, _3, _4, c) => ({
+    type: "assign",
+    recursive: a.ast.length === 1,
+    key: b.ast,
+    value: c.ast,
+  }),
 
   unpack: (_1, _2, a) => ({ type: "unpack", value: a.ast }),
 
@@ -194,7 +199,12 @@ s.addAttribute("ast", {
     value: c.ast[0],
   }),
 
-  bassign: (a, _1, b) => ({ type: "assign", key: a.ast, value: b.ast }),
+  bassign: (a, b, _1, c) => ({
+    type: "assign",
+    recursive: a.ast.length === 1,
+    key: b.ast,
+    value: c.ast,
+  }),
 
   btrue: (a) => ({
     type: "assign",
