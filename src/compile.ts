@@ -1,10 +1,10 @@
 import { reactiveFunc } from "./code";
 import { atom, derived, effect } from "./streams";
-import { resolve, isObject } from "./util";
+import { resolve, isObject, isSourceStream, isStream } from "./util";
 
 const resolveSource = (x) => {
-  if (isObject(x) && x.isStream && x.set) return x;
-  if (isObject(x) && x.isStream) return resolveSource(x.get());
+  if (isSourceStream(x)) return x;
+  if (isStream(x)) return resolveSource(x.get());
   return x;
 };
 
@@ -18,7 +18,11 @@ const readVars = (node, getVar, ignoreBlock = false) => {
       (node.type === "block" && !ignoreBlock)
     ) {
       for (const item of node.items.filter((n) => isObject(n))) {
-        if (["merge", "assign", "unpack"].includes(item.type)) {
+        if (item.type === "merge") {
+          if (isSourceStream(resolveSource(getVar(item.key, false)))) {
+            readVars(item.value, getVar, true);
+          }
+        } else if (["assign", "unpack"].includes(item.type)) {
           readVars(item.value, getVar, true);
         } else {
           readVars(item, getVar, true);
@@ -142,7 +146,7 @@ const compileNode = (node, getVar) => {
 
     for (const { key, value } of mergeItems.filter((n) => n.value)) {
       const target = resolveSource(newGetVar(key, false));
-      if (isObject(target) && target.isStream && target.set) {
+      if (isSourceStream(target)) {
         const source = compileNode(value, newGetVar);
         effect(() => {
           const res = resolve(source, true);
