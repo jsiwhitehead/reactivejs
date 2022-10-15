@@ -56,7 +56,7 @@ const compileNode = (node, getVar) => {
     });
   }
 
-  const { type, tag, items } = node;
+  const { type, items } = node;
   return derived(() => {
     const assignItems = items
       .filter((n) => isObject(n) && n.type === "assign" && !n.root)
@@ -152,13 +152,7 @@ const compileNode = (node, getVar) => {
     }
 
     if (type === "block") {
-      return {
-        type: "block",
-        ...(tag ? { tag } : {}),
-        values,
-        items: content,
-        ...root,
-      };
+      return { type: "block", values, items: content, ...root };
     }
     if (type === "object") return values;
     if (type === "array") return content;

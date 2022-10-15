@@ -178,8 +178,7 @@ s.addAttribute("ast", {
 
   block: (_1, a, _2, b, _3, _4, c, _5, _6, _7) => ({
     type: "block",
-    tag: a.ast,
-    items: [...b.ast, ...c.ast],
+    items: [{ type: "assign", key: "", value: a.ast }, ...b.ast, ...c.ast],
   }),
 
   plainblockclosed: (_1, _2, a, _3, _4) => ({
@@ -189,8 +188,7 @@ s.addAttribute("ast", {
 
   blockclosed: (_1, a, _2, b, _3, _4) => ({
     type: "block",
-    tag: a.ast,
-    items: b.ast,
+    items: [{ type: "assign", key: "", value: a.ast }, ...b.ast],
   }),
 
   bmerge: (a, b, _1, c) => ({
