@@ -143,13 +143,15 @@ const compileNode = (node, getVar) => {
       x.compiled ? x.value : compileNode(x.value, newGetVar)
     );
 
-    for (const { key, value } of mergeItems.filter((n) => n.value)) {
+    for (const { key, value, source } of mergeItems.filter((n) => n.value)) {
       const target = resolveSource(newGetVar(key, false));
       if (isSourceStream(target)) {
-        const source = compileNode(value, newGetVar);
+        const input = compileNode(value, newGetVar);
+        let skipFirst = source;
         effect(() => {
-          const res = resolve(source, true);
-          if (res !== undefined) target.set(res);
+          const res = resolve(input, true);
+          if (!skipFirst && res !== undefined) target.set(res);
+          skipFirst = false;
         }, `merge ${key}`);
       }
     }
