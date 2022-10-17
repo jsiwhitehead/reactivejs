@@ -38,13 +38,13 @@ const grammar = String.raw`Maraca {
     = "..." space* value
 
   plainblock
-    = "<\\" space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* ">" bcontent* "</>"
+    = "<\\" "\\"? space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* ">" bcontent* "</>"
 
   block<tag>
     = "<" tag space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* ">" bcontent* "</" tag ">"
 
   plainblockclosed
-    = "<\\" space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* "/>"
+    = "<\\" "\\"? space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* "/>"
 
   blockclosed<tag>
     = "<" tag space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* "/>"
@@ -134,7 +134,7 @@ s.addAttribute("ast", {
 
   function: (_1, _2, a, _3, _4, _5, _6, _7, b) => ({
     type: "func",
-    args: a.asIteration().children.map((c) => c.ast),
+    args: a.ast,
     body: b.ast,
   }),
 
@@ -171,23 +171,27 @@ s.addAttribute("ast", {
 
   unpack: (_1, _2, a) => ({ type: "unpack", value: a.ast }),
 
-  plainblock: (_1, _2, a, _3, _4, b, _5) => ({
+  plainblock: (_1, a, _2, b, _3, _4, c, _5) => ({
     type: "block",
-    items: [...a.ast, ...b.ast],
+    capture: a.sourceString === "\\",
+    items: [...b.ast, ...c.ast],
   }),
 
   block: (_1, a, _2, b, _3, _4, c, _5, _6, _7) => ({
     type: "block",
+    capture: true,
     items: [{ type: "assign", key: "", value: a.ast }, ...b.ast, ...c.ast],
   }),
 
-  plainblockclosed: (_1, _2, a, _3, _4) => ({
+  plainblockclosed: (_1, a, _2, b, _3, _4) => ({
     type: "block",
-    items: a.ast,
+    capture: a.sourceString === "\\",
+    items: b.ast,
   }),
 
   blockclosed: (_1, a, _2, b, _3, _4) => ({
     type: "block",
+    capture: true,
     items: [{ type: "assign", key: "", value: a.ast }, ...b.ast],
   }),
 

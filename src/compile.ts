@@ -8,24 +8,26 @@ const resolveSource = (x) => {
   return x;
 };
 
-const readVars = (node, getVar, ignoreBlock = false) => {
+const readVars = (node, getVar, first = true) => {
   if (isObject(node)) {
     if (node.type === "value") {
       for (const name of node.vars.filter((n) => n[0] !== "$")) getVar(name);
-      for (const v of node.values) readVars(v, getVar, true);
+      for (const v of node.values) readVars(v, getVar, false);
+    } else if (node.type === "func") {
+      readVars(node.body, getVar, false);
     } else if (
-      ["brackets", "object", "array"].includes(node.type) ||
-      (node.type === "block" && !ignoreBlock)
+      ["block", "brackets", "object", "array"].includes(node.type) &&
+      (!node.capture || first)
     ) {
       for (const item of node.items.filter((n) => isObject(n))) {
         if (item.type === "merge") {
           if (isSourceStream(resolveSource(getVar(item.key, false)))) {
-            readVars(item.value, getVar, true);
+            readVars(item.value, getVar, false);
           }
         } else if (["assign", "unpack"].includes(item.type)) {
-          readVars(item.value, getVar, true);
+          readVars(item.value, getVar, false);
         } else {
-          readVars(item, getVar, true);
+          readVars(item, getVar, false);
         }
       }
     }
@@ -60,7 +62,7 @@ const compileNode = (node, getVar) => {
     });
   }
 
-  const { type, items } = node;
+  const { type, capture, items } = node;
   return derived(() => {
     const assignItems = items
       .filter((n) => isObject(n) && n.type === "assign" && !n.root)
@@ -104,10 +106,7 @@ const compileNode = (node, getVar) => {
       }
     }
 
-    const newGetVar = (
-      name,
-      captureUndef = type === "block" ? true : undefined
-    ) => {
+    const newGetVar = (name, captureUndef = capture ? true : undefined) => {
       if (values.hasOwnProperty(name)) return values[name];
       if (assignItems[name]) {
         return (values[name] = compileNode(assignItems[name].value, (n, c) =>
