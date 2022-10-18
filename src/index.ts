@@ -2,6 +2,7 @@ import compileNode from "./compile";
 import parse from "./parse";
 import run from "./streams";
 
+export { reactiveFunc } from "./code";
 export { atom, derived, effect } from "./streams";
 export { resolve } from "./util";
 

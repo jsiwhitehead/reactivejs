@@ -4,10 +4,8 @@ import * as astring from "astring";
 import { derived } from "./streams";
 import { isObject, mapObject, resolve } from "./util";
 
-export const reactiveFunc = (func) => {
+export const reactiveFunc = (func) =>
   Object.assign(func, { reactiveFunc: true });
-  return func;
-};
 
 const buildCall = (func, ...args) => ({
   type: "CallExpression",

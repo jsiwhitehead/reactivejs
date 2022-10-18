@@ -52,7 +52,7 @@ const compileNode = (node, getVar) => {
   }
 
   if (node.type === "func") {
-    return reactiveFunc((...args) => {
+    const result = reactiveFunc((...args) => {
       const newGetVar = (name, captureUndef) => {
         const index = node.args.indexOf(name);
         if (index !== -1) return args[index];
@@ -60,6 +60,8 @@ const compileNode = (node, getVar) => {
       };
       return compileNode(node.body, newGetVar);
     });
+    Object.defineProperty(result, "length", { value: node.args.length });
+    return result;
   }
 
   const { type, capture, items } = node;

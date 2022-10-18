@@ -14,13 +14,13 @@ const grammar = String.raw`Maraca {
     = name space* "=>" space* value
 
   brackets
-    = "(" space* items space* ")"
+    = "(" "~"? space* items space* ")"
 
   object
-    = "{" space* items space* "}"
+    = "{" "~"? space* items space* "}"
 
   array
-    = "[" space* items space* "]"
+    = "[" "~"? space* items space* "]"
 
   items
     = listOf<(merge | assign | unpack | value), join> space* ","?
@@ -29,7 +29,7 @@ const grammar = String.raw`Maraca {
     = space* "," space*
 
   merge
-    = "~"? space* name space* "::" space* value
+    = name space* ("::" | ":?") space* value
 
   assign
     = ("*" | "&")? space* key space* ":" space* value
@@ -38,13 +38,13 @@ const grammar = String.raw`Maraca {
     = "..." space* value
 
   plainblock
-    = "<\\" "\\"? space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* ">" bcontent* "</>"
+    = "<\\" "~"? space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* ">" bcontent* "</>"
 
   block<tag>
     = "<" tag space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* ">" bcontent* "</" tag ">"
 
   plainblockclosed
-    = "<\\" "\\"? space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* "/>"
+    = "<\\" "~"? space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* "/>"
 
   blockclosed<tag>
     = "<" tag space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* "/>"
@@ -144,20 +144,32 @@ s.addAttribute("ast", {
     body: b.ast,
   }),
 
-  brackets: (_1, _2, a, _3, _4) => ({ type: "brackets", items: a.ast }),
+  brackets: (_1, a, _2, b, _3, _4) => ({
+    type: "brackets",
+    capture: a.sourceString === "~",
+    items: b.ast,
+  }),
 
-  object: (_1, _2, a, _3, _4) => ({ type: "object", items: a.ast }),
+  object: (_1, a, _2, b, _3, _4) => ({
+    type: "object",
+    capture: a.sourceString === "~",
+    items: b.ast,
+  }),
 
-  array: (_1, _2, a, _3, _4) => ({ type: "array", items: a.ast }),
+  array: (_1, a, _2, b, _3, _4) => ({
+    type: "array",
+    capture: a.sourceString === "~",
+    items: b.ast,
+  }),
 
   items: (a, _1, _2) => a.ast,
 
   join: (_1, _2, _3) => null,
 
-  merge: (a, _1, b, _2, _3, _4, c) => ({
+  merge: (a, _1, b, _2, c) => ({
     type: "merge",
-    source: a.sourceString === "~",
-    key: b.ast,
+    source: b.sourceString === ":~",
+    key: a.ast,
     value: c.ast,
   }),
 
@@ -173,7 +185,7 @@ s.addAttribute("ast", {
 
   plainblock: (_1, a, _2, b, _3, _4, c, _5) => ({
     type: "block",
-    capture: a.sourceString === "\\",
+    capture: a.sourceString === "~",
     items: [...b.ast, ...c.ast],
   }),
 
@@ -185,7 +197,7 @@ s.addAttribute("ast", {
 
   plainblockclosed: (_1, a, _2, b, _3, _4) => ({
     type: "block",
-    capture: a.sourceString === "\\",
+    capture: a.sourceString === "~",
     items: b.ast,
   }),
 
