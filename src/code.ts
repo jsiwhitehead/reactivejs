@@ -2,7 +2,7 @@ import * as acorn from "acorn";
 import * as astring from "astring";
 
 import { derived } from "./streams";
-import { isObject, mapObject, resolve } from "./util";
+import { mapObject, resolve } from "./util";
 
 export const reactiveFunc = (func) =>
   Object.assign(func, { reactiveFunc: true });
@@ -104,7 +104,7 @@ export default (code) => {
   };
 
   const walkNode = (node, doResolve?, parent?, prop?) => {
-    if (!isObject(node) || typeof node.type !== "string") return node;
+    if (typeof node !== "object" || typeof node.type !== "string") return node;
 
     const walked = mapObject(node, (v, k) => {
       const res = doResolve || !dontResolve[node.type]?.includes(k);

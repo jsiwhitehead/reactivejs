@@ -35,7 +35,7 @@ const readVars = (node, getVar, first = true) => {
 };
 
 const compileNode = (node, getVar) => {
-  if (typeof node === "string") return node;
+  if (node.type === "string") return node.value;
 
   if (node.type === "value") {
     const compiled = [] as any[];
@@ -52,10 +52,13 @@ const compileNode = (node, getVar) => {
   }
 
   if (node.type === "func") {
+    const argsIndicies = node.args.reduce(
+      (res, k, i) => ({ ...res, [k]: i }),
+      {}
+    );
     const result = reactiveFunc((...args) => {
       const newGetVar = (name, captureUndef) => {
-        const index = node.args.indexOf(name);
-        if (index !== -1) return args[index];
+        if (name in argsIndicies) return args[argsIndicies[name]];
         return getVar(name, captureUndef);
       };
       return compileNode(node.body, newGetVar);
@@ -67,7 +70,7 @@ const compileNode = (node, getVar) => {
   const { type, capture, items } = node;
   return derived(() => {
     const assignItems = items
-      .filter((n) => isObject(n) && n.type === "assign" && !n.root)
+      .filter((n) => n.type === "assign" && !n.root)
       .reduce(
         (res, { recursive, key, value }) => ({
           ...res,
@@ -76,16 +79,16 @@ const compileNode = (node, getVar) => {
         {}
       );
     const contentItems = items.filter(
-      (n) => !(isObject(n) && ["assign", "merge"].includes(n.type))
+      (n) => !["assign", "merge"].includes(n.type)
     );
-    const mergeItems = items.filter((n) => isObject(n) && n.type === "merge");
+    const mergeItems = items.filter((n) => n.type === "merge");
 
     const values = {};
 
     const partialValues = {};
     const partialContent = [] as any[];
     for (const n of contentItems) {
-      if (isObject(n) && n.type === "unpack") {
+      if (n.type === "unpack") {
         const value = resolve(compileNode(n.value, getVar));
         if (isObject(value)) {
           if (value.type === "block" && type === "block") {
@@ -109,12 +112,12 @@ const compileNode = (node, getVar) => {
     }
 
     const newGetVar = (name, captureUndef = capture ? true : undefined) => {
-      if (values.hasOwnProperty(name)) return values[name];
+      if (name in values) return values[name];
       if (assignItems[name]) {
         return (values[name] = compileNode(assignItems[name].value, (n, c) =>
           n !== name || assignItems[name].recursive
             ? newGetVar(n, c)
-            : partialValues.hasOwnProperty(n)
+            : n in partialValues
             ? partialValues[n]
             : getVar(n, c)
         ));
@@ -132,7 +135,7 @@ const compileNode = (node, getVar) => {
     readVars(node, newGetVar);
 
     const root = items
-      .filter((n) => isObject(n) && n.type === "assign" && n.root)
+      .filter((n) => n.type === "assign" && n.root)
       .reduce(
         (res, { key, value }) => ({
           ...res,

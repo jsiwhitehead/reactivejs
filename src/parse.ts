@@ -74,7 +74,7 @@ const grammar = String.raw`Maraca {
     = ~("<" | "{") any
 
   value
-    = (function| functionsingle | vchunk | xstring | ystring | template | brackets | object | array | plainblock | block<name> | plainblockclosed | blockclosed<name>)+
+    = (function | functionsingle | vchunk | xstring | ystring | template | brackets | object | array | plainblock | block<name> | plainblockclosed | blockclosed<name>)+
 
   vchunk
     = vchar+
@@ -140,7 +140,7 @@ s.addAttribute("ast", {
 
   functionsingle: (a, _1, _2, _3, b) => ({
     type: "func",
-    args: a.ast,
+    args: [a.ast],
     body: b.ast,
   }),
 
@@ -243,14 +243,20 @@ s.addAttribute("ast", {
     const result = [ast[0]];
     for (let i = 1; i < ast.length; i++) {
       if (
-        (typeof ast[i - 1] !== "string" || /[^\s!-]$/.test(ast[i - 1])) &&
-        typeof ast[i] === "object" &&
+        (ast[i - 1].type !== "string" || /[^\s!-]$/.test(ast[i - 1].value)) &&
         ["brackets", "array"].includes(ast[i].type)
       ) {
         if (ast[i].type === "brackets") {
-          result.push("(...", { ...ast[i], type: "array" }, ")");
+          result.push(
+            { type: "string", value: "(..." },
+            { ...ast[i], type: "array" },
+            { type: "string", value: ")" }
+          );
         } else {
-          result.push("[", ast[i].items[0], "]");
+          result.push({ type: "string", value: "[" }, ast[i].items[0], {
+            type: "string",
+            value: "]",
+          });
         }
       } else {
         result.push(ast[i]);
@@ -258,20 +264,20 @@ s.addAttribute("ast", {
     }
     const values = [] as any[];
     const code = result
-      .map((v) => (typeof v === "string" ? v : `$${values.push(v) - 1}`))
+      .map((v) => (v.type === "string" ? v.value : `$${values.push(v) - 1}`))
       .join("");
     return { type: "value", values, ...compileCode(code) };
   },
 
-  vchunk: (a) => a.sourceString,
+  vchunk: (a) => ({ type: "string", value: a.sourceString }),
 
   vchar: (_) => null,
 
-  xstring: (_1, a, _2) => `"${a.sourceString}"`,
+  xstring: (_1, a, _2) => ({ type: "string", value: `"${a.sourceString}"` }),
 
   xchar: (_) => null,
 
-  ystring: (_1, a, _2) => `'${a.sourceString}'`,
+  ystring: (_1, a, _2) => ({ type: "string", value: `'${a.sourceString}'` }),
 
   ychar: (_) => null,
 

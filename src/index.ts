@@ -10,7 +10,7 @@ const compile = (source, getVar) => {
   if (typeof source === "string") return compileNode(parse(source), getVar);
   const values = {};
   const newGetVar = (name) => {
-    if (values.hasOwnProperty(name)) return values[name];
+    if (name in values) return values[name];
     if (source[name]) return (values[name] = compile(source[name], newGetVar));
     return getVar(name);
   };
