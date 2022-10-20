@@ -18,26 +18,6 @@ const memoNewGetVar = (newGetVar) => {
   };
 };
 
-const readVars = (node, getVar, first = true) => {
-  if (node.type === "value") {
-    for (const name of node.vars.filter((n) => n[0] !== "$")) getVar(name);
-    for (const v of node.values) readVars(v, getVar, false);
-  } else if (node.type === "func") {
-    readVars(node.body, getVar, false);
-  } else if (node.type === "merge") {
-    if (isSourceStream(resolveSource(getVar(node.key, false)))) {
-      readVars(node.value, getVar, false);
-    }
-  } else if (["assign", "unpack"].includes(node.type)) {
-    readVars(node.value, getVar, false);
-  } else if (
-    ["block", "brackets", "object", "array"].includes(node.type) &&
-    (!node.capture || first)
-  ) {
-    for (const item of node.items) readVars(item, getVar, false);
-  }
-};
-
 const compileNode = (node, getVar) => {
   if (node.type === "string") return node.value;
 
@@ -56,10 +36,7 @@ const compileNode = (node, getVar) => {
   }
 
   if (node.type === "func") {
-    const argsIndicies = node.args.reduce(
-      (res, k, i) => ({ ...res, [k]: i }),
-      {}
-    );
+    const argsIndicies = Object.fromEntries(node.args.map((k, i) => [k, i]));
     const result = reactiveFunc((...args) => {
       const newGetVar = memoNewGetVar((name, captureUndef) => {
         if (name in argsIndicies) return args[argsIndicies[name]];
@@ -71,22 +48,9 @@ const compileNode = (node, getVar) => {
     return result;
   }
 
-  const { type, capture, items } = node;
+  const { type, assignItems, rootItems, contentItems, mergeItems, capture } =
+    node;
   return derived(() => {
-    const assignItems = items
-      .filter((n) => n.type === "assign" && !n.root)
-      .reduce(
-        (res, { recursive, key, value }) => ({
-          ...res,
-          [key]: { recursive, value },
-        }),
-        {}
-      );
-    const contentItems = items.filter(
-      (n) => !["assign", "merge"].includes(n.type)
-    );
-    const mergeItems = items.filter((n) => n.type === "merge");
-
     const values = {};
 
     const partialValues = {};
@@ -118,7 +82,7 @@ const compileNode = (node, getVar) => {
     const newGetVar = memoNewGetVar(
       (name, captureUndef = capture ? true : undefined) => {
         if (name in values) return values[name];
-        if (assignItems[name]) {
+        if (name in assignItems) {
           return (values[name] = compileNode(assignItems[name].value, (n, c) =>
             n !== name || assignItems[name].recursive
               ? newGetVar(n, c)
@@ -139,17 +103,15 @@ const compileNode = (node, getVar) => {
     for (const { key } of mergeItems.filter((n) => n.source)) {
       values[key] = atom(null);
     }
-    readVars(node, newGetVar);
+    for (const depend in capture || {}) {
+      if (!depend || isSourceStream(resolveSource(getVar(depend, false)))) {
+        for (const k of capture[depend]) newGetVar(k);
+      }
+    }
 
-    const root = items
-      .filter((n) => n.type === "assign" && n.root)
-      .reduce(
-        (res, { key, value }) => ({
-          ...res,
-          [key]: compileNode(value, newGetVar),
-        }),
-        {}
-      );
+    const root = Object.fromEntries(
+      rootItems.map(({ key, value }) => [key, compileNode(value, newGetVar)])
+    );
 
     const content = partialContent.map((x) =>
       x.compiled ? x.value : compileNode(x.value, newGetVar)

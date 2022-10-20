@@ -126,6 +126,58 @@ const grammar = String.raw`Maraca {
 
 }`;
 
+const mergeUsedVars = (...values) =>
+  Object.fromEntries(
+    Object.keys(values.reduce((a, b) => ({ ...a, ...b }), {})).map((k) => [
+      k,
+      [...new Set(values.flatMap((v) => v[k] || []))],
+    ])
+  );
+const getUsedVars = (node, ignore, depend) => {
+  if (node.type === "value") {
+    return mergeUsedVars(
+      { [depend]: node.vars.filter((n) => n[0] !== "$" && !ignore.has(n)) },
+      ...node.values.map((n) => getUsedVars(n, ignore, depend))
+    );
+  } else if (node.type === "func") {
+    return getUsedVars(node.body, new Set([...ignore, ...node.args]), depend);
+  } else if (node.type === "merge") {
+    return getUsedVars(node.value, ignore, depend || node.key);
+  } else if (["assign", "unpack"].includes(node.type)) {
+    return getUsedVars(node.value, ignore, depend);
+  } else if (
+    ["block", "brackets", "object", "array"].includes(node.type) &&
+    !node.capture
+  ) {
+    return mergeUsedVars(
+      ...node.items.map((n) => getUsedVars(n, ignore, depend))
+    );
+  }
+  return {};
+};
+const createGroup = (type, items, capture) => {
+  const groupKeys = new Set(
+    items
+      .filter((n) => ["assign", "merge"].includes(n.type))
+      .map((n) => n.key || "")
+  );
+  return {
+    type,
+    items,
+    assignItems: Object.fromEntries(
+      items
+        .filter((n) => n.type === "assign" && !n.root)
+        .map(({ recursive, key, value }) => [key, { recursive, value }])
+    ),
+    rootItems: items.filter((n) => n.type === "assign" && n.root),
+    contentItems: items.filter((n) => !["assign", "merge"].includes(n.type)),
+    mergeItems: items.filter((n) => n.type === "merge"),
+    capture:
+      capture &&
+      mergeUsedVars(...items.map((n) => getUsedVars(n, groupKeys, ""))),
+  };
+};
+
 const g = ohm.grammar(grammar);
 const s = g.createSemantics();
 
@@ -144,23 +196,14 @@ s.addAttribute("ast", {
     body: b.ast,
   }),
 
-  brackets: (_1, a, _2, b, _3, _4) => ({
-    type: "brackets",
-    capture: a.sourceString === "~",
-    items: b.ast,
-  }),
+  brackets: (_1, a, _2, b, _3, _4) =>
+    createGroup("brackets", b.ast, a.sourceString === "~"),
 
-  object: (_1, a, _2, b, _3, _4) => ({
-    type: "object",
-    capture: a.sourceString === "~",
-    items: b.ast,
-  }),
+  object: (_1, a, _2, b, _3, _4) =>
+    createGroup("object", b.ast, a.sourceString === "~"),
 
-  array: (_1, a, _2, b, _3, _4) => ({
-    type: "array",
-    capture: a.sourceString === "~",
-    items: b.ast,
-  }),
+  array: (_1, a, _2, b, _3, _4) =>
+    createGroup("array", b.ast, a.sourceString === "~"),
 
   items: (a, _1, _2) => a.ast,
 
@@ -183,29 +226,25 @@ s.addAttribute("ast", {
 
   unpack: (_1, _2, a) => ({ type: "unpack", value: a.ast }),
 
-  plainblock: (_1, a, _2, b, _3, _4, c, _5) => ({
-    type: "block",
-    capture: a.sourceString === "~",
-    items: [...b.ast, ...c.ast],
-  }),
+  plainblock: (_1, a, _2, b, _3, _4, c, _5) =>
+    createGroup("block", [...b.ast, ...c.ast], a.sourceString === "~"),
 
-  block: (_1, a, _2, b, _3, _4, c, _5, _6, _7) => ({
-    type: "block",
-    capture: true,
-    items: [{ type: "assign", key: "", value: a.ast }, ...b.ast, ...c.ast],
-  }),
+  block: (_1, a, _2, b, _3, _4, c, _5, _6, _7) =>
+    createGroup(
+      "block",
+      [{ type: "assign", key: "", value: a.ast }, ...b.ast, ...c.ast],
+      true
+    ),
 
-  plainblockclosed: (_1, a, _2, b, _3, _4) => ({
-    type: "block",
-    capture: a.sourceString === "~",
-    items: b.ast,
-  }),
+  plainblockclosed: (_1, a, _2, b, _3, _4) =>
+    createGroup("block", b.ast, a.sourceString === "~"),
 
-  blockclosed: (_1, a, _2, b, _3, _4) => ({
-    type: "block",
-    capture: true,
-    items: [{ type: "assign", key: "", value: a.ast }, ...b.ast],
-  }),
+  blockclosed: (_1, a, _2, b, _3, _4) =>
+    createGroup(
+      "block",
+      [{ type: "assign", key: "", value: a.ast }, ...b.ast],
+      true
+    ),
 
   bmerge: (a, b, _1, c) => ({
     type: "merge",
