@@ -2,7 +2,7 @@ import * as acorn from "acorn";
 import * as astring from "astring";
 
 import { derived } from "./streams";
-import { mapObject, resolve } from "./util";
+import { resolve } from "./util";
 
 export const reactiveFunc = (func) =>
   Object.assign(func, { reactiveFunc: true });
@@ -72,7 +72,7 @@ const doCall = (func, optional, ...args) => {
 };
 
 export default (code) => {
-  const vars = new Set();
+  const vars = {};
 
   const updateNode = (node, parent, prop) => {
     if (
@@ -81,7 +81,7 @@ export default (code) => {
     ) {
       const value = { type: "Literal", value: node.name };
       if (prop === "property" && !parent.computed) return value;
-      vars.add(node.name);
+      vars[node.name] = true;
       return buildCall("getValue", value);
     }
     if (node.type === "MemberExpression") {
@@ -106,11 +106,15 @@ export default (code) => {
   const walkNode = (node, doResolve?, parent?, prop?) => {
     if (typeof node !== "object" || typeof node.type !== "string") return node;
 
-    const walked = mapObject(node, (v, k) => {
-      const res = doResolve || !dontResolve[node.type]?.includes(k);
-      if (Array.isArray(v)) return v.map((x) => walkNode(x, res, node, k));
-      return walkNode(v, res, node, k);
-    });
+    const walked = Object.fromEntries(
+      Object.entries(node).map(([k, v]) => {
+        const res = doResolve || !dontResolve[node.type]?.includes(k);
+        if (Array.isArray(v)) {
+          return [k, v.map((x) => walkNode(x, res, node, k))];
+        }
+        return [k, walkNode(v, res, node, k)];
+      })
+    );
     const updated = updateNode(walked, parent, prop);
 
     if (doResolve && updated !== walked) return buildCall("resolve", updated);
@@ -127,7 +131,7 @@ export default (code) => {
   )();
 
   return {
-    vars: [...vars],
+    vars: Object.keys(vars),
     run: (getValue) =>
       derived(() => func(getValue, doMember, doCall, resolve), code) as any,
   };

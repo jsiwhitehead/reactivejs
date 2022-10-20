@@ -1,6 +1,6 @@
 import { reactiveFunc } from "./code";
 import { atom, derived, effect } from "./streams";
-import { resolve, isObject, isSourceStream, isStream } from "./util";
+import { resolve, isSourceStream, isStream } from "./util";
 
 const resolveSource = (x) => {
   if (isSourceStream(x)) return x;
@@ -8,29 +8,33 @@ const resolveSource = (x) => {
   return x;
 };
 
+const memoNewGetVar = (newGetVar) => {
+  const captureUndefMemo = {};
+  const noCaptureUndefMemo = {};
+  return (name, captureUndef?) => {
+    const memo = captureUndef ? captureUndefMemo : noCaptureUndefMemo;
+    if (name in memo) return memo[name];
+    return (memo[name] = newGetVar(name, captureUndef));
+  };
+};
+
 const readVars = (node, getVar, first = true) => {
-  if (isObject(node)) {
-    if (node.type === "value") {
-      for (const name of node.vars.filter((n) => n[0] !== "$")) getVar(name);
-      for (const v of node.values) readVars(v, getVar, false);
-    } else if (node.type === "func") {
-      readVars(node.body, getVar, false);
-    } else if (
-      ["block", "brackets", "object", "array"].includes(node.type) &&
-      (!node.capture || first)
-    ) {
-      for (const item of node.items.filter((n) => isObject(n))) {
-        if (item.type === "merge") {
-          if (isSourceStream(resolveSource(getVar(item.key, false)))) {
-            readVars(item.value, getVar, false);
-          }
-        } else if (["assign", "unpack"].includes(item.type)) {
-          readVars(item.value, getVar, false);
-        } else {
-          readVars(item, getVar, false);
-        }
-      }
+  if (node.type === "value") {
+    for (const name of node.vars.filter((n) => n[0] !== "$")) getVar(name);
+    for (const v of node.values) readVars(v, getVar, false);
+  } else if (node.type === "func") {
+    readVars(node.body, getVar, false);
+  } else if (node.type === "merge") {
+    if (isSourceStream(resolveSource(getVar(node.key, false)))) {
+      readVars(node.value, getVar, false);
     }
+  } else if (["assign", "unpack"].includes(node.type)) {
+    readVars(node.value, getVar, false);
+  } else if (
+    ["block", "brackets", "object", "array"].includes(node.type) &&
+    (!node.capture || first)
+  ) {
+    for (const item of node.items) readVars(item, getVar, false);
   }
 };
 
@@ -57,10 +61,10 @@ const compileNode = (node, getVar) => {
       {}
     );
     const result = reactiveFunc((...args) => {
-      const newGetVar = (name, captureUndef) => {
+      const newGetVar = memoNewGetVar((name, captureUndef) => {
         if (name in argsIndicies) return args[argsIndicies[name]];
         return getVar(name, captureUndef);
-      };
+      });
       return compileNode(node.body, newGetVar);
     });
     Object.defineProperty(result, "length", { value: node.args.length });
@@ -90,7 +94,11 @@ const compileNode = (node, getVar) => {
     for (const n of contentItems) {
       if (n.type === "unpack") {
         const value = resolve(compileNode(n.value, getVar));
-        if (isObject(value)) {
+        if (Array.isArray(value)) {
+          partialContent.push(
+            ...value.map((x) => ({ compiled: true, value: x }))
+          );
+        } else if (typeof value === "object" && value !== null) {
           if (value.type === "block" && type === "block") {
             Object.assign(values, value.values);
             Object.assign(partialValues, value.values);
@@ -101,31 +109,30 @@ const compileNode = (node, getVar) => {
             Object.assign(values, value);
             Object.assign(partialValues, value);
           }
-        } else if (Array.isArray(value)) {
-          partialContent.push(
-            ...value.map((x) => ({ compiled: true, value: x }))
-          );
         }
       } else {
         partialContent.push({ compiled: false, value: n });
       }
     }
 
-    const newGetVar = (name, captureUndef = capture ? true : undefined) => {
-      if (name in values) return values[name];
-      if (assignItems[name]) {
-        return (values[name] = compileNode(assignItems[name].value, (n, c) =>
-          n !== name || assignItems[name].recursive
-            ? newGetVar(n, c)
-            : n in partialValues
-            ? partialValues[n]
-            : getVar(n, c)
-        ));
+    const newGetVar = memoNewGetVar(
+      (name, captureUndef = capture ? true : undefined) => {
+        if (name in values) return values[name];
+        if (assignItems[name]) {
+          return (values[name] = compileNode(assignItems[name].value, (n, c) =>
+            n !== name || assignItems[name].recursive
+              ? newGetVar(n, c)
+              : n in partialValues
+              ? partialValues[n]
+              : getVar(n, c)
+          ));
+        }
+        const res = getVar(name, captureUndef ? false : captureUndef);
+        if (res === undefined && captureUndef)
+          return (values[name] = atom(null));
+        return res;
       }
-      const res = getVar(name, captureUndef ? false : captureUndef);
-      if (res === undefined && captureUndef) return (values[name] = atom(null));
-      return res;
-    };
+    );
 
     for (const name of Object.keys(assignItems)) delete values[name];
     for (const name of Object.keys(assignItems)) newGetVar(name);
