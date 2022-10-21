@@ -126,6 +126,18 @@ const grammar = String.raw`Maraca {
 
 }`;
 
+const joinValue = (parts) =>
+  parts
+    .flatMap((x) => x)
+    .reduce((res, p) => {
+      if (typeof res[res.length - 1] === "string" && typeof p === "string") {
+        res[res.length - 1] += p;
+      } else {
+        res.push(p);
+      }
+      return res;
+    }, []);
+
 const g = ohm.grammar(grammar);
 const s = g.createSemantics();
 
@@ -135,32 +147,70 @@ s.addAttribute("ast", {
   function: (_1, _2, a, _3, _4, _5, _6, _7, b) => ({
     type: "func",
     args: a.ast,
-    body: b.ast,
+    nodes: [b.ast],
   }),
 
   functionsingle: (a, _1, _2, _3, b) => ({
     type: "func",
     args: [a.ast],
-    body: b.ast,
+    nodes: [b.ast],
   }),
 
-  brackets: (_1, a, _2, b, _3, _4) => ({
-    type: "brackets",
-    items: b.ast,
-    capture: a.sourceString === "~",
-  }),
+  brackets: (_1, a, _2, b, _3, _4) => {
+    const result = {
+      type: "brackets",
+      nodes: b.ast,
+      capture: a.sourceString === "~",
+    };
+    if (!result.capture && result.nodes.length === 1) {
+      return joinValue(["(", result.nodes[0], ")"]);
+    }
+    return result;
+  },
 
-  object: (_1, a, _2, b, _3, _4) => ({
-    type: "object",
-    items: b.ast,
-    capture: a.sourceString === "~",
-  }),
+  object: (_1, a, _2, b, _3, _4) => {
+    const result = {
+      type: "object",
+      nodes: b.ast,
+      capture: a.sourceString === "~",
+    };
+    if (
+      !result.capture &&
+      result.nodes.every(
+        (n) => n.type === "assign" && !n.recursive && !n.root && !n.source
+      )
+    ) {
+      return joinValue([
+        "{",
+        ...result.nodes.flatMap((n, i) => [
+          ...(i > 0 ? [","] : []),
+          `${n.key}:`,
+          n.value,
+        ]),
+        "}",
+      ]);
+    }
+    return result;
+  },
 
-  array: (_1, a, _2, b, _3, _4) => ({
-    type: "array",
-    items: b.ast,
-    capture: a.sourceString === "~",
-  }),
+  array: (_1, a, _2, b, _3, _4) => {
+    const result = {
+      type: "array",
+      nodes: b.ast,
+      capture: a.sourceString === "~",
+    };
+    if (
+      !result.capture &&
+      result.nodes.every((n) => !["assign", "merge"].includes(n.type))
+    ) {
+      return joinValue([
+        "[",
+        ...result.nodes.flatMap((n, i) => [...(i > 0 ? [","] : []), n]),
+        "]",
+      ]);
+    }
+    return result;
+  },
 
   items: (a, _1, _2) => a.ast,
 
@@ -169,7 +219,7 @@ s.addAttribute("ast", {
   merge: (a, _1, _2, _3, b) => ({
     type: "merge",
     key: a.ast,
-    value: b.ast,
+    nodes: [b.ast],
   }),
 
   assign: (a, _1, b, _2, c, _4, d) => ({
@@ -178,39 +228,39 @@ s.addAttribute("ast", {
     root: a.sourceString === "&",
     source: c.sourceString === ":~",
     key: b.ast,
-    value: d.ast,
+    nodes: [d.ast],
   }),
 
-  unpack: (_1, _2, a) => ({ type: "unpack", value: a.ast }),
+  unpack: (_1, _2, a) => ({ type: "unpack", nodes: [a.ast] }),
 
   plainblock: (_1, a, _2, b, _3, _4, c, _5) => ({
     type: "block",
-    items: [...b.ast, ...c.ast],
+    nodes: [...b.ast, ...c.ast],
     capture: a.sourceString === "~",
   }),
 
   block: (_1, a, _2, b, _3, _4, c, _5, _6, _7) => ({
     type: "block",
-    items: [{ type: "assign", key: "", value: a.ast }, ...b.ast, ...c.ast],
+    nodes: [{ type: "assign", key: "", value: a.ast }, ...b.ast, ...c.ast],
     capture: true,
   }),
 
   plainblockclosed: (_1, a, _2, b, _3, _4) => ({
     type: "block",
-    items: b.ast,
+    nodes: b.ast,
     capture: a.sourceString === "~",
   }),
 
   blockclosed: (_1, a, _2, b, _3, _4) => ({
     type: "block",
-    items: [{ type: "assign", key: "", value: a.ast }, ...b.ast],
+    nodes: [{ type: "assign", key: "", value: a.ast }, ...b.ast],
     capture: true,
   }),
 
   bmerge: (a, _1, b) => ({
     type: "merge",
     key: a.ast,
-    value: b.ast,
+    nodes: [b.ast],
   }),
 
   bassign: (a, b, c, d) => ({
@@ -219,18 +269,18 @@ s.addAttribute("ast", {
     root: a.sourceString === "&",
     source: c.sourceString === ":~",
     key: b.ast,
-    value: d.ast,
+    nodes: [d.ast],
   }),
 
   btrue: (a) => ({
     type: "assign",
     key: a.ast,
-    value: { type: "value", values: [], vars: [], run: () => true },
+    nodes: [{ type: "value", values: [], vars: [], run: () => true }],
   }),
 
   bcontent: (a) => a.ast,
 
-  bunpack: (_1, _2, a, _3) => ({ type: "unpack", value: a.ast }),
+  bunpack: (_1, _2, a, _3) => ({ type: "unpack", nodes: [a.ast] }),
 
   bvalue: (_1, a, _2) => a.ast,
 
@@ -243,41 +293,34 @@ s.addAttribute("ast", {
     const result = [ast[0]];
     for (let i = 1; i < ast.length; i++) {
       if (
-        (ast[i - 1].type !== "string" || /[^\s!-]$/.test(ast[i - 1].value)) &&
+        (typeof ast[i - 1] !== "string" || /[^\s!-]$/.test(ast[i - 1])) &&
         ["brackets", "array"].includes(ast[i].type)
       ) {
         if (ast[i].type === "brackets") {
           result.push(
-            { type: "string", value: "(..." },
-            { ...ast[i], type: "array" },
-            { type: "string", value: ")" }
+            "(",
+            ...ast[i].nodes.flatMap((n, i) => [...(i > 0 ? [","] : []), n]),
+            ")"
           );
         } else {
-          result.push({ type: "string", value: "[" }, ast[i].items[0], {
-            type: "string",
-            value: "]",
-          });
+          result.push("[", ast[i].nodes[0], "]");
         }
       } else {
         result.push(ast[i]);
       }
     }
-    const values = [] as any[];
-    const code = result
-      .map((v) => (v.type === "string" ? v.value : `$${values.push(v) - 1}`))
-      .join("");
-    return { type: "value", values, ...compileCode(code) };
+    return joinValue(result);
   },
 
-  vchunk: (a) => ({ type: "string", value: a.sourceString }),
+  vchunk: (a) => a.sourceString,
 
   vchar: (_) => null,
 
-  xstring: (_1, a, _2) => ({ type: "string", value: `"${a.sourceString}"` }),
+  xstring: (_1, a, _2) => `"${a.sourceString}"`,
 
   xchar: (_) => null,
 
-  ystring: (_1, a, _2) => ({ type: "string", value: `'${a.sourceString}'` }),
+  ystring: (_1, a, _2) => `'${a.sourceString}'`,
 
   ychar: (_) => null,
 
@@ -286,7 +329,7 @@ s.addAttribute("ast", {
     const code = `\`${a.ast
       .map((v) => (typeof v === "string" ? v : `\${$${values.push(v) - 1}}`))
       .join("")}\``;
-    return { type: "value", values, ...compileCode(code) };
+    return { type: "value", nodes: values, ...compileCode(code) };
   },
 
   tvalue: (_1, a, _2) => a.ast,
@@ -314,45 +357,61 @@ s.addAttribute("ast", {
   _iter: (...children) => children.map((c) => c.ast),
 });
 
+const processValues = (node) => {
+  if (Array.isArray(node)) {
+    const values = [] as any[];
+    const code = node
+      .map((v) => (typeof v === "string" ? v : `$${values.push(v) - 1}`))
+      .join("");
+    return {
+      type: "value",
+      nodes: values.map(processValues),
+      ...compileCode(code),
+    };
+  } else {
+    return { ...node, nodes: node.nodes.map(processValues) };
+  }
+};
+
 const processNode = (node, processVar, depends) => {
   if (node.type === "value") {
     for (const name of node.vars.filter((n) => n[0] !== "$")) {
       processVar(name, depends);
     }
-    for (const n of node.values) processNode(n, processVar, depends);
+    for (const n of node.nodes) processNode(n, processVar, depends);
   } else if (node.type === "func") {
     if (!depends || !node.args.includes(depends)) {
       const newProcessVar = (name, depends) => {
         if (!node.args.includes(name)) processVar(name, depends);
       };
-      processNode(node.body, newProcessVar, depends);
+      processNode(node.nodes[0], newProcessVar, depends);
     }
   } else if (node.type === "assign") {
-    processNode(node.value, processVar, depends);
+    processNode(node.nodes[0], processVar, depends);
   } else if (node.type === "merge") {
     if (!depends) {
-      processNode(node.value, processVar, node.key);
+      processNode(node.nodes[0], processVar, node.key);
     }
   } else if (["block", "brackets", "object", "array"].includes(node.type)) {
-    const assignItems = Object.fromEntries(
-      node.items
+    const assignNodes = Object.fromEntries(
+      node.nodes
         .filter((n) => n.type === "assign" && !n.root)
         .map((n) => [n.key, n])
     );
-    const orderedItems = [] as any[];
-    const sourceItems = {};
+    const orderedNodes = [] as any[];
+    const sourceNodes = {};
     const processed = {};
     const newProcessVar = (name, depends) => {
       if (!(name in processed)) {
-        if (name in assignItems) {
+        if (name in assignNodes) {
           processed[name] = true;
-          processNode(assignItems[name], newProcessVar, depends);
-          orderedItems.push(assignItems[name]);
+          processNode(assignNodes[name], newProcessVar, depends);
+          orderedNodes.push(assignNodes[name]);
         } else {
           const exists = processVar(name, depends);
           if (!exists && node.capture) {
-            sourceItems[depends] = sourceItems[depends] || [];
-            sourceItems[depends].push({
+            sourceNodes[depends] = sourceNodes[depends] || [];
+            sourceNodes[depends].push({
               type: "assign",
               source: true,
               key: name,
@@ -365,15 +424,15 @@ const processNode = (node, processVar, depends) => {
       }
       return processed[name];
     };
-    for (const name in assignItems) newProcessVar(name, "");
-    for (const n of node.items.filter((n) => n.type !== "assign" || n.root)) {
+    for (const name in assignNodes) newProcessVar(name, "");
+    for (const n of node.nodes.filter((n) => n.type !== "assign" || n.root)) {
       processNode(n, newProcessVar, "");
     }
-    node.assignItems = orderedItems;
-    node.sourceItems = sourceItems;
-    node.mergeItems = node.items.filter((n) => n.type === "merge");
-    node.rootItems = node.items.filter((n) => n.type === "assign" && n.root);
-    node.contentItems = node.items.filter(
+    node.assignNodes = orderedNodes;
+    node.sourceNodes = sourceNodes;
+    node.mergeNodes = node.nodes.filter((n) => n.type === "merge");
+    node.rootNodes = node.nodes.filter((n) => n.type === "assign" && n.root);
+    node.contentNodes = node.nodes.filter(
       (n) => !["assign", "merge"].includes(n.type)
     );
   }
@@ -385,7 +444,7 @@ export default (script, library) => {
     console.error(m.message);
     throw new Error("Parser error");
   }
-  const result = s(m).ast;
+  const result = processValues(s(m).ast);
   processNode(result, (name) => name in library, "");
   return result;
 };
