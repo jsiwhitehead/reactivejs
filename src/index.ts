@@ -6,20 +6,15 @@ export { reactiveFunc } from "./code";
 export { atom, derived, effect } from "./streams";
 export { resolve } from "./util";
 
-const compile = (source, getVar) => {
-  if (typeof source === "string") return compileNode(parse(source), getVar);
-  const values = {};
-  const newGetVar = (name) => {
-    if (name in values) return values[name];
-    if (source[name]) return (values[name] = compile(source[name], newGetVar));
-    return getVar(name);
-  };
-  for (const name of Object.keys(source)) newGetVar(name);
-  return values;
+const combine = (source) => {
+  if (typeof source === "string") return source;
+  return `{ ${Object.entries(source)
+    .map(([k, v]) => `${k}: ${combine(v)}`)
+    .join(", ")} }`;
 };
 
 export default (library, source, update) => {
-  const compiled = compile(source, (name) => library[name]);
+  const compiled = compileNode(parse(combine(source), library), library);
   run(() => {
     update(compiled);
   });

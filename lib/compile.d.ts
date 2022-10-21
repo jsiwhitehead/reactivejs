@@ -1,2 +1,2 @@
-declare const compileNode: (node: any, getVar: any) => any;
+declare const compileNode: (node: any, context: any) => any;
 export default compileNode;

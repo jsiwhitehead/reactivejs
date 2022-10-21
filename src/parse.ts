@@ -29,10 +29,10 @@ const grammar = String.raw`Maraca {
     = space* "," space*
 
   merge
-    = name space* ("::" | ":?") space* value
+    = name space* "::" space* value
 
   assign
-    = ("*" | "&")? space* key space* ":" space* value
+    = ("*" | "&")? space* key space* (":~" | ":") space* value
 
   unpack
     = "..." space* value
@@ -50,10 +50,10 @@ const grammar = String.raw`Maraca {
     = "<" tag space* listOf<(bmerge | bassign | btrue | bunpack | bvalue), space+> space* "/>"
 
   bmerge
-    = "~"? key "::" (bvalue | string)
+    = key "::" (bvalue | string)
 
   bassign
-    = ("*" | "&")? key "=" (bvalue | string)
+    = ("*" | "&")? key (":~" | "=") (bvalue | string)
 
   btrue
     = name
@@ -126,58 +126,6 @@ const grammar = String.raw`Maraca {
 
 }`;
 
-const mergeUsedVars = (...values) =>
-  Object.fromEntries(
-    Object.keys(values.reduce((a, b) => ({ ...a, ...b }), {})).map((k) => [
-      k,
-      [...new Set(values.flatMap((v) => v[k] || []))],
-    ])
-  );
-const getUsedVars = (node, ignore, depend) => {
-  if (node.type === "value") {
-    return mergeUsedVars(
-      { [depend]: node.vars.filter((n) => n[0] !== "$" && !ignore.has(n)) },
-      ...node.values.map((n) => getUsedVars(n, ignore, depend))
-    );
-  } else if (node.type === "func") {
-    return getUsedVars(node.body, new Set([...ignore, ...node.args]), depend);
-  } else if (node.type === "merge") {
-    return getUsedVars(node.value, ignore, depend || node.key);
-  } else if (["assign", "unpack"].includes(node.type)) {
-    return getUsedVars(node.value, ignore, depend);
-  } else if (
-    ["block", "brackets", "object", "array"].includes(node.type) &&
-    !node.capture
-  ) {
-    return mergeUsedVars(
-      ...node.items.map((n) => getUsedVars(n, ignore, depend))
-    );
-  }
-  return {};
-};
-const createGroup = (type, items, capture) => {
-  const groupKeys = new Set(
-    items
-      .filter((n) => ["assign", "merge"].includes(n.type))
-      .map((n) => n.key || "")
-  );
-  return {
-    type,
-    items,
-    assignItems: Object.fromEntries(
-      items
-        .filter((n) => n.type === "assign" && !n.root)
-        .map(({ recursive, key, value }) => [key, { recursive, value }])
-    ),
-    rootItems: items.filter((n) => n.type === "assign" && n.root),
-    contentItems: items.filter((n) => !["assign", "merge"].includes(n.type)),
-    mergeItems: items.filter((n) => n.type === "merge"),
-    capture:
-      capture &&
-      mergeUsedVars(...items.map((n) => getUsedVars(n, groupKeys, ""))),
-  };
-};
-
 const g = ohm.grammar(grammar);
 const s = g.createSemantics();
 
@@ -196,69 +144,82 @@ s.addAttribute("ast", {
     body: b.ast,
   }),
 
-  brackets: (_1, a, _2, b, _3, _4) =>
-    createGroup("brackets", b.ast, a.sourceString === "~"),
+  brackets: (_1, a, _2, b, _3, _4) => ({
+    type: "brackets",
+    items: b.ast,
+    capture: a.sourceString === "~",
+  }),
 
-  object: (_1, a, _2, b, _3, _4) =>
-    createGroup("object", b.ast, a.sourceString === "~"),
+  object: (_1, a, _2, b, _3, _4) => ({
+    type: "object",
+    items: b.ast,
+    capture: a.sourceString === "~",
+  }),
 
-  array: (_1, a, _2, b, _3, _4) =>
-    createGroup("array", b.ast, a.sourceString === "~"),
+  array: (_1, a, _2, b, _3, _4) => ({
+    type: "array",
+    items: b.ast,
+    capture: a.sourceString === "~",
+  }),
 
   items: (a, _1, _2) => a.ast,
 
   join: (_1, _2, _3) => null,
 
-  merge: (a, _1, b, _2, c) => ({
+  merge: (a, _1, _2, _3, b) => ({
     type: "merge",
-    source: b.sourceString === ":~",
     key: a.ast,
-    value: c.ast,
+    value: b.ast,
   }),
 
-  assign: (a, _1, b, _2, _3, _4, c) => ({
+  assign: (a, _1, b, _2, c, _4, d) => ({
     type: "assign",
     recursive: a.sourceString === "*",
     root: a.sourceString === "&",
+    source: c.sourceString === ":~",
     key: b.ast,
-    value: c.ast,
+    value: d.ast,
   }),
 
   unpack: (_1, _2, a) => ({ type: "unpack", value: a.ast }),
 
-  plainblock: (_1, a, _2, b, _3, _4, c, _5) =>
-    createGroup("block", [...b.ast, ...c.ast], a.sourceString === "~"),
-
-  block: (_1, a, _2, b, _3, _4, c, _5, _6, _7) =>
-    createGroup(
-      "block",
-      [{ type: "assign", key: "", value: a.ast }, ...b.ast, ...c.ast],
-      true
-    ),
-
-  plainblockclosed: (_1, a, _2, b, _3, _4) =>
-    createGroup("block", b.ast, a.sourceString === "~"),
-
-  blockclosed: (_1, a, _2, b, _3, _4) =>
-    createGroup(
-      "block",
-      [{ type: "assign", key: "", value: a.ast }, ...b.ast],
-      true
-    ),
-
-  bmerge: (a, b, _1, c) => ({
-    type: "merge",
-    source: a.sourceString === "~",
-    key: b.ast,
-    value: c.ast,
+  plainblock: (_1, a, _2, b, _3, _4, c, _5) => ({
+    type: "block",
+    items: [...b.ast, ...c.ast],
+    capture: a.sourceString === "~",
   }),
 
-  bassign: (a, b, _1, c) => ({
+  block: (_1, a, _2, b, _3, _4, c, _5, _6, _7) => ({
+    type: "block",
+    items: [{ type: "assign", key: "", value: a.ast }, ...b.ast, ...c.ast],
+    capture: true,
+  }),
+
+  plainblockclosed: (_1, a, _2, b, _3, _4) => ({
+    type: "block",
+    items: b.ast,
+    capture: a.sourceString === "~",
+  }),
+
+  blockclosed: (_1, a, _2, b, _3, _4) => ({
+    type: "block",
+    items: [{ type: "assign", key: "", value: a.ast }, ...b.ast],
+    capture: true,
+  }),
+
+  bmerge: (a, _1, b) => ({
+    type: "merge",
+    key: a.ast,
+    value: b.ast,
+  }),
+
+  bassign: (a, b, c, d) => ({
     type: "assign",
     recursive: a.sourceString === "*",
     root: a.sourceString === "&",
+    source: c.sourceString === ":~",
     key: b.ast,
-    value: c.ast,
+    value: d.ast,
   }),
 
   btrue: (a) => ({
@@ -353,11 +314,78 @@ s.addAttribute("ast", {
   _iter: (...children) => children.map((c) => c.ast),
 });
 
-export default (script) => {
+const processNode = (node, processVar, depends) => {
+  if (node.type === "value") {
+    for (const name of node.vars.filter((n) => n[0] !== "$")) {
+      processVar(name, depends);
+    }
+    for (const n of node.values) processNode(n, processVar, depends);
+  } else if (node.type === "func") {
+    if (!depends || !node.args.includes(depends)) {
+      const newProcessVar = (name, depends) => {
+        if (!node.args.includes(name)) processVar(name, depends);
+      };
+      processNode(node.body, newProcessVar, depends);
+    }
+  } else if (node.type === "assign") {
+    processNode(node.value, processVar, depends);
+  } else if (node.type === "merge") {
+    if (!depends) {
+      processNode(node.value, processVar, node.key);
+    }
+  } else if (["block", "brackets", "object", "array"].includes(node.type)) {
+    const assignItems = Object.fromEntries(
+      node.items
+        .filter((n) => n.type === "assign" && !n.root)
+        .map((n) => [n.key, n])
+    );
+    const orderedItems = [] as any[];
+    const sourceItems = {};
+    const processed = {};
+    const newProcessVar = (name, depends) => {
+      if (!(name in processed)) {
+        if (name in assignItems) {
+          processed[name] = true;
+          processNode(assignItems[name], newProcessVar, depends);
+          orderedItems.push(assignItems[name]);
+        } else {
+          const exists = processVar(name, depends);
+          if (!exists && node.capture) {
+            sourceItems[depends] = sourceItems[depends] || [];
+            sourceItems[depends].push({
+              type: "assign",
+              source: true,
+              key: name,
+            });
+            processed[name] = true;
+          } else {
+            processed[name] = false;
+          }
+        }
+      }
+      return processed[name];
+    };
+    for (const name in assignItems) newProcessVar(name, "");
+    for (const n of node.items.filter((n) => n.type !== "assign" || n.root)) {
+      processNode(n, newProcessVar, "");
+    }
+    node.assignItems = orderedItems;
+    node.sourceItems = sourceItems;
+    node.mergeItems = node.items.filter((n) => n.type === "merge");
+    node.rootItems = node.items.filter((n) => n.type === "assign" && n.root);
+    node.contentItems = node.items.filter(
+      (n) => !["assign", "merge"].includes(n.type)
+    );
+  }
+};
+
+export default (script, library) => {
   const m = g.match(script);
   if (m.failed()) {
     console.error(m.message);
     throw new Error("Parser error");
   }
-  return s(m).ast;
+  const result = s(m).ast;
+  processNode(result, (name) => name in library, "");
+  return result;
 };
