@@ -43,43 +43,48 @@ const compileNode = (node, context) => {
     contentNodes,
   } = node;
   return derived(() => {
+    const newContext = { ...context };
     const assignValues = {};
-    for (const n of assignNodes) {
-      assignValues[n.key] = n.source
-        ? atom(null)
-        : compileNode(n.nodes[0], { ...context, ...assignValues });
-    }
-
-    const assignContext = { ...context, ...assignValues };
-
     for (const depends in sourceNodes) {
-      if (!depends || isSourceStream(resolveSource(assignContext[depends]))) {
+      if (!depends || isSourceStream(resolveSource(newContext[depends]))) {
         for (const n of sourceNodes[depends]) {
-          assignValues[n.key] = atom(null);
+          const result = atom(null);
+          newContext[n.key] = result;
+          assignValues[n.key] = result;
         }
       }
     }
+    for (const n of assignNodes) {
+      const result = n.source
+        ? atom(null)
+        : compileNode(n.nodes[0], n.recursive ? newContext : { ...newContext });
+      newContext[n.key] = result;
+      assignValues[n.key] = result;
+    }
 
-    const newContext = { ...context, ...assignValues };
-
-    for (const { key, value, source } of [
+    for (const { key, nodes, source } of [
       ...mergeNodes,
       ...assignNodes.filter((n) => n.source && n.nodes[0]),
     ]) {
       if (key in newContext) {
-        const target = newContext[key];
-        const input = compileNode(value, newContext);
-        let skipFirst = source;
-        effect(() => {
-          const res = resolve(input, true);
-          if (!skipFirst && res !== undefined) target.set(res);
-          skipFirst = false;
-        }, `merge ${key}`);
+        const target = resolveSource(newContext[key]);
+        if (isSourceStream(target)) {
+          const input = compileNode(nodes[0], newContext);
+          let skipFirst = source;
+          effect(() => {
+            const res = resolve(input, true);
+            if (!skipFirst && res !== undefined) target.set(res);
+            skipFirst = false;
+          }, `merge ${key}`);
+        }
       }
     }
 
     const root = Object.fromEntries(
-      rootNodes.map(({ key, value }) => [key, compileNode(value, newContext)])
+      rootNodes.map(({ key, nodes }) => [
+        key,
+        compileNode(nodes[0], newContext),
+      ])
     );
 
     const unpackValues = {};

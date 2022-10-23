@@ -168,30 +168,11 @@ s.addAttribute("ast", {
     return result;
   },
 
-  object: (_1, a, _2, b, _3, _4) => {
-    const result = {
-      type: "object",
-      nodes: b.ast,
-      capture: a.sourceString === "~",
-    };
-    if (
-      !result.capture &&
-      result.nodes.every(
-        (n) => n.type === "assign" && !n.recursive && !n.root && !n.source
-      )
-    ) {
-      return joinValue([
-        "{",
-        ...result.nodes.flatMap((n, i) => [
-          ...(i > 0 ? [","] : []),
-          `${n.key}:`,
-          n.value,
-        ]),
-        "}",
-      ]);
-    }
-    return result;
-  },
+  object: (_1, a, _2, b, _3, _4) => ({
+    type: "object",
+    nodes: b.ast,
+    capture: a.sourceString === "~",
+  }),
 
   array: (_1, a, _2, b, _3, _4) => {
     const result = {
@@ -201,7 +182,7 @@ s.addAttribute("ast", {
     };
     if (
       !result.capture &&
-      result.nodes.every((n) => !["assign", "merge"].includes(n.type))
+      result.nodes.every((n) => !["assign", "unpack", "merge"].includes(n.type))
     ) {
       return joinValue([
         "[",
@@ -324,13 +305,15 @@ s.addAttribute("ast", {
 
   ychar: (_) => null,
 
-  template: (_1, a, _2) => {
-    const values = [] as any[];
-    const code = `\`${a.ast
-      .map((v) => (typeof v === "string" ? v : `\${$${values.push(v) - 1}}`))
-      .join("")}\``;
-    return { type: "value", nodes: values, ...compileCode(code) };
-  },
+  template: (_1, a, _2) => [
+    "`",
+    ...a.ast.flatMap((v) => {
+      if (typeof v === "string") return v;
+      if (Array.isArray(v)) return ["${", ...v, "}"];
+      return ["${", v, "}"];
+    }),
+    "`",
+  ],
 
   tvalue: (_1, a, _2) => a.ast,
 
@@ -381,12 +364,13 @@ const processNode = (node, processVar, depends) => {
     for (const n of node.nodes) processNode(n, processVar, depends);
   } else if (node.type === "func") {
     if (!depends || !node.args.includes(depends)) {
-      const newProcessVar = (name, depends) => {
-        if (!node.args.includes(name)) processVar(name, depends);
+      const newProcessVar = (name, depends, captureUndef) => {
+        if (node.args.includes(name)) return true;
+        return processVar(name, depends, captureUndef);
       };
       processNode(node.nodes[0], newProcessVar, depends);
     }
-  } else if (node.type === "assign") {
+  } else if (["assign", "unpack"].includes(node.type)) {
     processNode(node.nodes[0], processVar, depends);
   } else if (node.type === "merge") {
     if (!depends) {
@@ -401,15 +385,23 @@ const processNode = (node, processVar, depends) => {
     const orderedNodes = [] as any[];
     const sourceNodes = {};
     const processed = {};
-    const newProcessVar = (name, depends) => {
+    const newProcessVar = (
+      name,
+      depends,
+      captureUndef = node.capture ? true : undefined
+    ) => {
       if (!(name in processed)) {
         if (name in assignNodes) {
           processed[name] = true;
           processNode(assignNodes[name], newProcessVar, depends);
           orderedNodes.push(assignNodes[name]);
         } else {
-          const exists = processVar(name, depends);
-          if (!exists && node.capture) {
+          const exists = processVar(
+            name,
+            depends,
+            captureUndef ? false : captureUndef
+          );
+          if (!exists && captureUndef) {
             sourceNodes[depends] = sourceNodes[depends] || [];
             sourceNodes[depends].push({
               type: "assign",
@@ -418,7 +410,7 @@ const processNode = (node, processVar, depends) => {
             });
             processed[name] = true;
           } else {
-            processed[name] = false;
+            processed[name] = exists;
           }
         }
       }
