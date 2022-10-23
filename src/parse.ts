@@ -138,6 +138,19 @@ const joinValue = (parts) =>
       return res;
     }, []);
 
+const usesVars = (node, vars) => {
+  if (Array.isArray(node)) {
+    const { vars: valueVars } = compileCode(
+      node.map((v) => (typeof v === "string" ? v : "$X")).join("")
+    );
+    return (
+      valueVars.some((v) => vars.includes(v)) ||
+      node.some((n) => typeof n !== "string" && usesVars(n, vars))
+    );
+  }
+  return node.nodes?.some((n) => usesVars(n, vars));
+};
+
 const g = ohm.grammar(grammar);
 const s = g.createSemantics();
 
@@ -168,11 +181,28 @@ s.addAttribute("ast", {
     return result;
   },
 
-  object: (_1, a, _2, b, _3, _4) => ({
-    type: "object",
-    nodes: b.ast,
-    capture: a.sourceString === "~",
-  }),
+  object: (_1, a, _2, b, _3, _4) => {
+    const result = {
+      type: "object",
+      nodes: b.ast,
+      capture: a.sourceString === "~",
+    };
+    if (!result.capture && result.nodes.every((n) => n.type === "assign")) {
+      const keys = result.nodes.map((n) => n.key);
+      if (result.nodes.every((n) => !usesVars(n, keys))) {
+        return joinValue([
+          "({",
+          ...result.nodes.flatMap((n, i) => [
+            ...(i > 0 ? [","] : []),
+            `${n.key}:`,
+            n.nodes[0],
+          ]),
+          "})",
+        ]);
+      }
+    }
+    return result;
+  },
 
   array: (_1, a, _2, b, _3, _4) => {
     const result = {

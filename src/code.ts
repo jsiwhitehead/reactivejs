@@ -77,7 +77,8 @@ export default (code) => {
   const updateNode = (node, parent, prop) => {
     if (
       node.type === "Identifier" &&
-      !["undefined", "null"].includes(node.name)
+      !["undefined", "null"].includes(node.name) &&
+      prop !== "key"
     ) {
       const value = { type: "Literal", value: node.name };
       if (prop === "property" && !parent.computed) return value;
