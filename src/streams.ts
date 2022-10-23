@@ -136,7 +136,7 @@ class Stream {
     }
     return this.value;
   }
-  stopGet(s) {
+  stopGet(s?) {
     this.observedBy.delete(s);
     if (this.observedBy.size === 0) {
       if (DEBUG) console.log(`Stop:\t${this.index}: ${this.debug}`);
@@ -150,12 +150,32 @@ class Stream {
 }
 
 export const atom = (initial?) => new SourceStream(initial);
-
 export const derived = (run, debug = "") => new Stream(run, false, debug);
-
 export const effect = (run, debug = "") => new Stream(run, true, debug).get();
 
-export default (run) => {
-  queue.add(new Stream(run, true, "run"));
+export const isStream = (x) => x && typeof x === "object" && x.isStream;
+export const isSourceStream = (x) => isStream(x) && x.set;
+export const resolve = (x, deep = false) => {
+  if (!x) return x;
+  if (Array.isArray(x)) {
+    if (!deep) return x;
+    return x.map((y) => resolve(y, true));
+  }
+  if (typeof x === "object") {
+    if (x.isStream) return resolve(x.get(), deep);
+    if (!deep) return x;
+    return Object.fromEntries(
+      Object.entries(x).map(([k, y]) => [k, resolve(y, true)])
+    );
+  }
+  return x;
+};
+
+export default (run, once = false) => {
+  const s = new Stream(run, true, "run");
+  queue.add(s);
   runNext();
+  if (!once) return () => s.stopGet();
+  s.stopGet();
+  return s.value;
 };

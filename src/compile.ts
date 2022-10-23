@@ -1,6 +1,12 @@
 import { reactiveFunc } from "./code";
-import { atom, derived, effect } from "./streams";
-import { resolve, isSourceStream, isStream } from "./util";
+import {
+  atom,
+  derived,
+  effect,
+  isSourceStream,
+  isStream,
+  resolve,
+} from "./streams";
 
 const resolveSource = (x) => {
   if (isSourceStream(x)) return x;

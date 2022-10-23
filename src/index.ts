@@ -1,10 +1,9 @@
 import compileNode from "./compile";
 import parse from "./parse";
-import run from "./streams";
+import run, { resolve } from "./streams";
 
 export { reactiveFunc } from "./code";
-export { atom, derived, effect } from "./streams";
-export { resolve } from "./util";
+export { atom, derived, effect, resolve } from "./streams";
 
 const combine = (source) => {
   if (typeof source === "string") return source;
@@ -13,9 +12,8 @@ const combine = (source) => {
     .join(", ")} }`;
 };
 
-export default (library, source, update) => {
+export default (library, source, update?) => {
   const compiled = compileNode(parse(combine(source), library), library);
-  run(() => {
-    update(compiled);
-  });
+  if (update) return run(() => update(compiled));
+  return run(() => resolve(compiled, true), true);
 };

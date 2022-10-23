@@ -1,5 +1,4 @@
 export { reactiveFunc } from "./code";
-export { atom, derived, effect } from "./streams";
-export { resolve } from "./util";
-declare const _default: (library: any, source: any, update: any) => void;
+export { atom, derived, effect, resolve } from "./streams";
+declare const _default: (library: any, source: any, update?: any) => any;
 export default _default;

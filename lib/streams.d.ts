@@ -24,10 +24,13 @@ declare class Stream {
     trace(): void;
     update(): void;
     get(): any;
-    stopGet(s: any): void;
+    stopGet(s?: any): void;
 }
 export declare const atom: (initial?: any) => SourceStream;
 export declare const derived: (run: any, debug?: string) => Stream;
 export declare const effect: (run: any, debug?: string) => any;
-declare const _default: (run: any) => void;
+export declare const isStream: (x: any) => any;
+export declare const isSourceStream: (x: any) => any;
+export declare const resolve: (x: any, deep?: boolean) => any;
+declare const _default: (run: any, once?: boolean) => any;
 export default _default;

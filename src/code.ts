@@ -1,8 +1,7 @@
 import * as acorn from "acorn";
 import * as astring from "astring";
 
-import { derived } from "./streams";
-import { resolve } from "./util";
+import { derived, resolve } from "./streams";
 
 export const reactiveFunc = (func) =>
   Object.assign(func, { reactiveFunc: true });
