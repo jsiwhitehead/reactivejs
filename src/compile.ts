@@ -76,7 +76,7 @@ const compileNode = (node, context) => {
         const target = resolveSource(newContext[key]);
         if (isSourceStream(target)) {
           const input = compileNode(nodes[0], newContext);
-          let skipFirst = source;
+          let skipFirst = !source;
           effect(() => {
             const res = resolve(input, true);
             if (!skipFirst && res !== undefined) target.set(res);
