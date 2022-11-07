@@ -3,8 +3,11 @@ import * as astring from "astring";
 
 import { derived, resolve } from "./streams";
 
-export const reactiveFunc = (func) =>
-  Object.assign(func, { reactiveFunc: true });
+export const reactiveFunc = (func, length?) => {
+  const result = Object.assign(func, { reactiveFunc: true });
+  Object.defineProperty(result, "length", { value: length || func.length });
+  return result;
+};
 
 const buildCall = (func, ...args) => ({
   type: "CallExpression",
